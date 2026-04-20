@@ -11,6 +11,7 @@ import urllib.request
 import uuid
 from contextlib import closing
 from datetime import date, datetime, timedelta
+from calendar import monthrange
 
 from pathlib import Path
 
@@ -197,6 +198,82 @@ def load_transactions(filters: dict, sample_loader):
     return sample_loader(filters)
 
 
+def query_kpi_summary(filters: dict):
+    module = load_psycopg()
+    if module is None:
+        return None
+
+    try:
+        with closing(connect_database(module)) as connection:
+            current_totals = query_totals(connection, filters)
+
+            previous_end = filters["start"] - timedelta(days=1)
+            previous_start = previous_end - timedelta(days=(filters["end"] - filters["start"]).days)
+            previous_filters = {
+                **filters,
+                "start": previous_start,
+                "end": previous_end,
+            }
+            previous_totals = query_totals(connection, previous_filters)
+
+            month_filters = {
+                **filters,
+                "start": filters["end"].replace(day=1),
+                "end": filters["end"],
+            }
+            month_totals = query_totals(connection, month_filters)
+
+            top_branch = query_top_group(connection, filters, "cabang", "cabang")
+            top_brand = query_top_group(connection, filters, "brand", "brand")
+            top_channel = query_top_group(connection, filters, "channel", "channel")
+            largest_gap_branch = query_top_group(
+                connection,
+                filters,
+                "cabang",
+                "cabang",
+                order_by="ABS(COALESCE(SUM(selisih), 0)) DESC",
+            )
+    except Exception:  # noqa: BLE001
+        return None
+
+    month_days = monthrange(filters["end"].year, filters["end"].month)[1]
+    days_elapsed = filters["end"].day
+    run_rate = round((current_or_zero(month_totals["gmv"]) / days_elapsed) * month_days, 2) if days_elapsed else 0.0
+
+    cards = [
+        {"key": "gmv", "label": "GMV", "value": current_or_zero(current_totals["gmv"]), "delta": change_pct(current_totals["gmv"], previous_totals["gmv"]), "accent": "forest"},
+        {"key": "nett_gmv", "label": "Nett GMV", "value": current_or_zero(current_totals["nett_gmv"]), "delta": change_pct(current_totals["nett_gmv"], previous_totals["nett_gmv"]), "accent": "sage"},
+        {"key": "ads", "label": "Ads Spend", "value": current_or_zero(current_totals["ads"]), "delta": change_pct(current_totals["ads"], previous_totals["ads"]), "accent": "amber"},
+        {"key": "diskon", "label": "Total Diskon", "value": current_or_zero(current_totals["diskon"]), "delta": change_pct(current_totals["diskon"], previous_totals["diskon"]), "accent": "berry"},
+        {"key": "cash_in", "label": "Cash In", "value": current_or_zero(current_totals["cash_in"]), "delta": change_pct(current_totals["cash_in"], previous_totals["cash_in"]), "accent": "sky"},
+        {"key": "selisih", "label": "Selisih", "value": current_or_zero(current_totals["selisih"]), "delta": change_pct(current_totals["selisih"], previous_totals["selisih"]), "accent": "fire"},
+        {"key": "run_rate", "label": "Run Rate Bulanan", "value": run_rate, "delta": None, "accent": "charcoal"},
+    ]
+
+    return {
+        "period": {
+            "start": filters["start"].isoformat(),
+            "end": filters["end"].isoformat(),
+        },
+        "totals": current_totals,
+        "derived": {
+            "run_rate": run_rate,
+            "ads_efficiency": current_totals["ads_efficiency"],
+            "discount_rate": current_totals["discount_rate"],
+            "net_margin": current_totals["net_margin"],
+            "collection_rate": current_totals["collection_rate"],
+        },
+        "cards": cards,
+        "highlights": {
+            "top_branch": top_branch,
+            "top_brand": top_brand,
+            "top_channel": top_channel,
+            "largest_gap_branch": largest_gap_branch,
+        },
+        "source_mode": "postgres",
+    }
+
+
 def load_filter_options(defaults: dict):
     if current_source_mode() == "postgres":
         options = query_filter_options()
@@ -211,6 +288,116 @@ def load_sync_logs(limit: int, fallback_logs: list[dict]):
         if logs is not None and logs:
             return logs
     return fallback_logs[:limit]
+
+
+def query_totals(connection, filters: dict):
+    where_sql, params = sql_where(filters)
+    query = f"""
+        SELECT
+            COALESCE(SUM(penjualan), 0) AS gmv,
+            COALESCE(SUM(potongan), 0) AS diskon,
+            COALESCE(SUM(harga_coret), 0) AS harga_coret,
+            COALESCE(SUM(ads), 0) AS ads,
+            COALESCE(SUM(terima), 0) AS nett_gmv,
+            COALESCE(SUM(uang_masuk), 0) AS cash_in,
+            COALESCE(SUM(selisih), 0) AS selisih
+        FROM transaksi_harian
+        WHERE {where_sql}
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+
+    gmv = current_or_zero(row[0])
+    diskon = current_or_zero(row[1])
+    harga_coret = current_or_zero(row[2])
+    ads = current_or_zero(row[3])
+    nett_gmv = current_or_zero(row[4])
+    cash_in = current_or_zero(row[5])
+    selisih = current_or_zero(row[6])
+
+    return {
+        "gmv": gmv,
+        "diskon": diskon,
+        "harga_coret": harga_coret,
+        "ads": ads,
+        "nett_gmv": nett_gmv,
+        "cash_in": cash_in,
+        "selisih": selisih,
+        "ads_efficiency": safe_pct(ads, gmv),
+        "discount_rate": safe_pct(diskon, gmv),
+        "net_margin": safe_pct(nett_gmv, gmv),
+        "collection_rate": safe_pct(cash_in, nett_gmv),
+    }
+
+
+def query_top_group(connection, filters: dict, group_column: str, result_key: str, order_by: str = "SUM(penjualan) DESC"):
+    where_sql, params = sql_where(filters)
+    query = f"""
+        SELECT
+            {group_column},
+            COALESCE(SUM(penjualan), 0) AS gmv,
+            COALESCE(SUM(terima), 0) AS nett_gmv,
+            COALESCE(SUM(ads), 0) AS ads,
+            COALESCE(SUM(potongan), 0) AS diskon,
+            COALESCE(SUM(uang_masuk), 0) AS cash_in,
+            COALESCE(SUM(selisih), 0) AS selisih
+        FROM transaksi_harian
+        WHERE {where_sql}
+        GROUP BY {group_column}
+        ORDER BY {order_by}
+        LIMIT 1
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+
+    if not row:
+        return None
+    return {
+        result_key: row[0],
+        "gmv": current_or_zero(row[1]),
+        "nett_gmv": current_or_zero(row[2]),
+        "ads": current_or_zero(row[3]),
+        "diskon": current_or_zero(row[4]),
+        "cash_in": current_or_zero(row[5]),
+        "selisih": current_or_zero(row[6]),
+    }
+
+
+def sql_where(filters: dict):
+    clauses = ["tanggal BETWEEN %s AND %s"]
+    params = [filters["start"], filters["end"]]
+    if filters.get("cabang"):
+        clauses.append("cabang = ANY(%s)")
+        params.append(filters["cabang"])
+    if filters.get("brand"):
+        clauses.append("brand = ANY(%s)")
+        params.append(filters["brand"])
+    if filters.get("channel"):
+        clauses.append("channel = ANY(%s)")
+        params.append(filters["channel"])
+    return " AND ".join(clauses), params
+
+
+def current_or_zero(value):
+    return round(float(value or 0), 2)
+
+
+def safe_pct(numerator, denominator):
+    numerator = current_or_zero(numerator)
+    denominator = current_or_zero(denominator)
+    if denominator == 0:
+        return None
+    return round((numerator / denominator) * 100, 2)
+
+
+def change_pct(current, previous):
+    current = current_or_zero(current)
+    previous = current_or_zero(previous)
+    if previous == 0:
+        return None
+    return round(((current - previous) / previous) * 100, 2)
 
 
 def trigger_sync(triggered_by: str, fallback_sync):

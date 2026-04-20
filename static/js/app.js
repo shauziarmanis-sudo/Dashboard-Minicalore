@@ -765,19 +765,19 @@ function renderActivePage() {
   if (allowedPages().includes("overview")) {
     renderOverview();
   }
-  if (allowedPages().includes("trend")) {
+  if (allowedPages().includes("trend") && state.data.trend) {
     renderTrendPage();
   }
-  if (allowedPages().includes("brand")) {
+  if (allowedPages().includes("brand") && state.data.brand) {
     renderBrandPage();
   }
-  if (allowedPages().includes("branch")) {
+  if (allowedPages().includes("branch") && state.data.branch) {
     renderBranchPage();
   }
-  if (allowedPages().includes("platform")) {
+  if (allowedPages().includes("platform") && state.data.platform) {
     renderPlatformPage();
   }
-  if (allowedPages().includes("reconciliation")) {
+  if (allowedPages().includes("reconciliation") && state.data.reconciliation) {
     renderReconciliationPage();
   }
 }
@@ -792,32 +792,39 @@ async function refreshData() {
 
   const query = buildQuery(state.filters);
   const requests = [apiFetch(`/api/kpi?${query}`), apiFetch("/api/sync/logs")];
+  const pageLoaders = {
+    trend: () => apiFetch(`/api/trend/daily?${query}`),
+    brand: () => apiFetch(`/api/brand?${query}`),
+    branch: () => apiFetch(`/api/cabang?${query}`),
+    platform: () => apiFetch(`/api/platform?${query}`),
+    reconciliation: () =>
+      apiFetch(`/api/rekonsiliasi?${buildQuery(state.filters, { only_difference: state.onlyDifference })}`),
+  };
 
-  if (allowedPages().includes("trend")) {
-    requests.push(apiFetch(`/api/trend/daily?${query}`));
-  }
-  if (allowedPages().includes("brand")) {
-    requests.push(apiFetch(`/api/brand?${query}`));
-  }
-  if (allowedPages().includes("branch")) {
-    requests.push(apiFetch(`/api/cabang?${query}`));
-  }
-  if (allowedPages().includes("platform")) {
-    requests.push(apiFetch(`/api/platform?${query}`));
-  }
-  if (allowedPages().includes("reconciliation")) {
-    requests.push(apiFetch(`/api/rekonsiliasi?${buildQuery(state.filters, { only_difference: state.onlyDifference })}`));
+  if (pageLoaders[state.activePage]) {
+    requests.push(pageLoaders[state.activePage]());
   }
 
   const responses = await Promise.all(requests);
   let cursor = 0;
   state.data.kpi = responses[cursor++];
   state.data.syncLogs = responses[cursor++];
-  state.data.trend = allowedPages().includes("trend") ? responses[cursor++] : null;
-  state.data.brand = allowedPages().includes("brand") ? responses[cursor++] : null;
-  state.data.branch = allowedPages().includes("branch") ? responses[cursor++] : null;
-  state.data.platform = allowedPages().includes("platform") ? responses[cursor++] : null;
-  state.data.reconciliation = allowedPages().includes("reconciliation") ? responses[cursor++] : null;
+
+  if (state.activePage === "trend") {
+    state.data.trend = responses[cursor++];
+  }
+  if (state.activePage === "brand") {
+    state.data.brand = responses[cursor++];
+  }
+  if (state.activePage === "branch") {
+    state.data.branch = responses[cursor++];
+  }
+  if (state.activePage === "platform") {
+    state.data.platform = responses[cursor++];
+  }
+  if (state.activePage === "reconciliation") {
+    state.data.reconciliation = responses[cursor++];
+  }
 
   renderActivePage();
   setStatus(`Dashboard siap. Data terfilter dari ${formatDate(state.filters.start)} sampai ${formatDate(state.filters.end)}.`);
@@ -874,13 +881,13 @@ function handleLogout() {
 
 function bindEvents() {
   el.loginForm.addEventListener("submit", handleLogin);
-  el.pageNav.addEventListener("click", (event) => {
+  el.pageNav.addEventListener("click", async (event) => {
     const button = event.target.closest("[data-page]");
     if (!button) {
       return;
     }
     state.activePage = button.dataset.page;
-    renderActivePage();
+    await refreshData();
   });
   el.syncButton.addEventListener("click", handleManualSync);
   el.logoutButton.addEventListener("click", handleLogout);

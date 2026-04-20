@@ -11,7 +11,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from dashboard_store import current_source_mode, load_filter_options, load_sync_logs, load_transactions, trigger_sync
+from dashboard_store import current_source_mode, load_filter_options, load_sync_logs, load_transactions, query_kpi_summary, trigger_sync
 
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -332,6 +332,11 @@ def month_to_date_records(filters: dict) -> list[dict]:
 
 
 def build_kpi_payload(filters: dict) -> dict:
+    if current_source_mode() == "postgres":
+        sql_payload = query_kpi_summary(filters)
+        if sql_payload is not None:
+            return sql_payload
+
     current_records = load_transactions(filters, sample_records)
     current_totals = totals(current_records)
     previous_totals = totals(previous_period_records(filters))
