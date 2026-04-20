@@ -7,19 +7,26 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Newsreader:wght@500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/styles.css?v=20260421-2" />
+    <link rel="stylesheet" href="/styles.css?v=20260421-3" />
   </head>
   <body>
     <div class="app-shell">
       <aside class="sidebar">
         <div class="sidebar-panel brand-panel">
+          <span class="eyebrow">Main Kitchen</span>
           <h1>Dashboard Sales Overview</h1>
-          <p>
-            Monitor GMV, brand, cabang, dan rekonsiliasi channel delivery dalam satu layar yang lebih ringkas.
-          </p>
+          <p>Real-time performance across all branches, brands, and delivery platforms.</p>
+        </div>
+
+        <div class="sidebar-panel nav-panel">
+          <div class="sidebar-heading">
+            <span class="eyebrow">Navigation</span>
+            <span class="sidebar-note">Executive workspace</span>
+          </div>
+          <nav class="page-nav" id="page-nav"></nav>
         </div>
 
         <div class="sidebar-panel session-panel" id="session-panel">
@@ -34,11 +41,9 @@
         </div>
 
         <div class="sidebar-panel sync-panel">
-          <div class="panel-heading">
-            <div>
-              <span class="eyebrow">Sync status</span>
-              <h2>Google Sheets ke dashboard</h2>
-            </div>
+          <div class="sidebar-heading">
+            <span class="eyebrow">Sync Status</span>
+            <span class="sidebar-note">Sheets to warehouse</span>
           </div>
           <div id="sync-summary" class="sync-summary">
             Menunggu login untuk menampilkan status sinkronisasi terbaru.
@@ -46,87 +51,124 @@
         </div>
       </aside>
 
-      <main class="content">
+      <div class="main-shell">
         <header class="topbar">
-          <div>
-            <span class="eyebrow">Multi-cabang | Multi-brand | Multi-platform</span>
-            <h2 id="page-title">Ringkasan bisnis real-time</h2>
-            <p id="page-subtitle">
-              Gunakan filter global di bawah header untuk melihat performa restoran lintas cabang dan channel.
-            </p>
+          <div class="topbar-copy">
+            <span class="topbar-kicker">Culinary Cartographer</span>
+            <strong class="topbar-title">Central Sales Command</strong>
           </div>
           <div class="topbar-actions">
-            <button class="secondary-button" id="sync-button">Sync manual</button>
-            <button class="ghost-button" id="logout-button">Logout</button>
+            <button class="icon-button" type="button" aria-label="Notifikasi">
+              <span class="material-symbols-outlined">notifications</span>
+            </button>
+            <button class="icon-button" type="button" aria-label="Bantuan">
+              <span class="material-symbols-outlined">help</span>
+            </button>
+            <button class="secondary-button" id="sync-button" type="button">
+              <span class="material-symbols-outlined">sync</span>
+              Sync manual
+            </button>
+            <button class="ghost-button" id="logout-button" type="button">
+              <span class="material-symbols-outlined">logout</span>
+              Logout
+            </button>
           </div>
         </header>
 
-        <section class="toolbar-panel">
-          <div class="panel-heading">
-            <div>
-              <span class="eyebrow">Control semua halaman</span>
-              <h3>Filter global yang lebih ringkas</h3>
+        <main class="content">
+          <section class="hero-panel">
+            <div class="hero-copy">
+              <span class="eyebrow">Multi-cabang | Multi-brand | Multi-platform</span>
+              <h2 id="page-title">Ringkasan bisnis real-time</h2>
+              <p id="page-subtitle">
+                Gunakan filter global untuk melihat performa restoran lintas cabang, brand, dan channel.
+              </p>
             </div>
-            <div class="topbar-actions">
-              <button class="ghost-button" id="reset-filters">Reset</button>
-              <button class="primary-button" id="apply-filters">Terapkan filter</button>
-            </div>
-          </div>
 
-          <div class="toolbar-grid">
-            <label class="field compact-field">
-              <span>Mulai</span>
-              <input type="date" id="start-date" />
-            </label>
+            <section class="toolbar-panel">
+              <div class="toolbar-head">
+                <div>
+                  <span class="eyebrow">Control Semua Halaman</span>
+                  <h3>Filter global yang lebih ringkas</h3>
+                </div>
+                <div class="toolbar-actions">
+                  <button class="ghost-button" id="reset-filters" type="button">Reset</button>
+                  <button class="primary-button" id="apply-filters" type="button">Terapkan filter</button>
+                </div>
+              </div>
 
-            <label class="field compact-field">
-              <span>Selesai</span>
-              <input type="date" id="end-date" />
-            </label>
+              <div class="toolbar-grid">
+                <label class="field compact-field">
+                  <span class="field-label">
+                    <span class="material-symbols-outlined">calendar_today</span>
+                    Mulai
+                  </span>
+                  <input type="date" id="start-date" />
+                </label>
 
-            <details class="dropdown-field" id="branch-dropdown">
-              <summary>
-                <span>Cabang</span>
-                <strong id="branch-count">Semua cabang</strong>
-              </summary>
-              <div class="dropdown-menu" id="branch-options"></div>
-            </details>
+                <label class="field compact-field">
+                  <span class="field-label">
+                    <span class="material-symbols-outlined">event</span>
+                    Selesai
+                  </span>
+                  <input type="date" id="end-date" />
+                </label>
 
-            <details class="dropdown-field" id="brand-dropdown">
-              <summary>
-                <span>Brand</span>
-                <strong id="brand-count">Semua brand</strong>
-              </summary>
-              <div class="dropdown-menu" id="brand-options"></div>
-            </details>
-          </div>
+                <details class="dropdown-field" id="branch-dropdown">
+                  <summary>
+                    <span class="summary-icon material-symbols-outlined">storefront</span>
+                    <span class="summary-copy">
+                      <span>Cabang</span>
+                      <strong id="branch-count">Semua cabang</strong>
+                    </span>
+                    <span class="material-symbols-outlined summary-arrow">expand_more</span>
+                  </summary>
+                  <div class="dropdown-menu" id="branch-options"></div>
+                </details>
 
-          <div class="channel-defaults">
-            <span class="field-caption">Channel default</span>
-            <div class="static-pill-list" id="channel-options"></div>
-          </div>
-        </section>
+                <details class="dropdown-field" id="brand-dropdown">
+                  <summary>
+                    <span class="summary-icon material-symbols-outlined">local_mall</span>
+                    <span class="summary-copy">
+                      <span>Brand</span>
+                      <strong id="brand-count">Semua brand</strong>
+                    </span>
+                    <span class="material-symbols-outlined summary-arrow">expand_more</span>
+                  </summary>
+                  <div class="dropdown-menu" id="brand-options"></div>
+                </details>
+              </div>
 
-        <nav class="page-nav" id="page-nav"></nav>
-        <div class="status-banner" id="status-banner">Menunggu autentikasi.</div>
+              <div class="channel-defaults">
+                <span class="field-caption">
+                  <span class="material-symbols-outlined">apps</span>
+                  Channel default
+                </span>
+                <div class="static-pill-list" id="channel-options"></div>
+              </div>
+            </section>
+          </section>
 
-        <section class="page-section" id="overview-page"></section>
-        <section class="page-section is-hidden" id="trend-page"></section>
-        <section class="page-section is-hidden" id="brand-page"></section>
-        <section class="page-section is-hidden" id="branch-page"></section>
-        <section class="page-section is-hidden" id="platform-page"></section>
-        <section class="page-section is-hidden" id="reconciliation-page"></section>
-      </main>
+          <div class="status-banner" id="status-banner">Menunggu autentikasi.</div>
+
+          <section class="page-section" id="overview-page"></section>
+          <section class="page-section is-hidden" id="trend-page"></section>
+          <section class="page-section is-hidden" id="brand-page"></section>
+          <section class="page-section is-hidden" id="branch-page"></section>
+          <section class="page-section is-hidden" id="platform-page"></section>
+          <section class="page-section is-hidden" id="reconciliation-page"></section>
+        </main>
+      </div>
     </div>
 
     <div class="login-modal" id="login-modal">
       <div class="login-card">
         <div class="login-copy">
-          <span class="eyebrow">Demo access</span>
+          <span class="eyebrow">Demo Access</span>
           <h2>Masuk ke Dashboard Sales Overview</h2>
           <p>
-            Role-based access disiapkan mengikuti kebutuhan Executive, Finance,
-            Marketing, dan Operations.
+            Role-based access disiapkan untuk Executive, Finance, Marketing, dan Operations
+            dengan tampilan yang sama seperti dashboard live.
           </p>
           <ul class="credential-list">
             <li><strong>owner</strong> / minicalore123</li>
@@ -138,12 +180,18 @@
 
         <form class="login-form" id="login-form">
           <label class="field">
-            <span>Username</span>
+            <span class="field-label">
+              <span class="material-symbols-outlined">person</span>
+              Username
+            </span>
             <input type="text" id="username" value="owner" autocomplete="username" required />
           </label>
 
           <label class="field">
-            <span>Password</span>
+            <span class="field-label">
+              <span class="material-symbols-outlined">lock</span>
+              Password
+            </span>
             <input
               type="password"
               id="password"
@@ -159,6 +207,6 @@
       </div>
     </div>
 
-    <script type="module" src="/js/app.js?v=20260421-2"></script>
+    <script type="module" src="/js/app.js?v=20260421-3"></script>
   </body>
 </html>

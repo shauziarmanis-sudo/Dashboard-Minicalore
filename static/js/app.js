@@ -8,8 +8,8 @@ import {
   formatDate,
   formatPercent,
   formatSignedPercent,
-} from "./utils.js?v=20260421-2";
-import { renderDonutChart, renderGroupedBars, renderHorizontalBars, renderTrendChart } from "./charts.js?v=20260421-2";
+} from "./utils.js?v=20260421-3";
+import { renderDonutChart, renderGroupedBars, renderHorizontalBars, renderTrendChart } from "./charts.js?v=20260421-3";
 
 const pageMeta = {
   overview: {
@@ -17,36 +17,48 @@ const pageMeta = {
     title: "Executive overview",
     subtitle: "Skor KPI utama, run rate bulanan, dan highlight performa bisnis dalam satu layar.",
     label: "Overview",
+    icon: "dashboard",
+    hint: "Snapshot utama bisnis",
   },
   trend: {
     id: "trend-page",
     title: "Tren harian",
     subtitle: "Pantau ritme GMV, Nett GMV, dan Ads Spend per hari pada periode terpilih.",
     label: "Tren Harian",
+    icon: "monitoring",
+    hint: "Gerak harian penjualan",
   },
   brand: {
     id: "brand-page",
     title: "Performa brand",
     subtitle: "Lihat kontribusi setiap brand terhadap GMV dan kualitas monetisasinya.",
     label: "Performa Brand",
+    icon: "local_mall",
+    hint: "Kontribusi tiap brand",
   },
   branch: {
     id: "branch-page",
     title: "Performa cabang",
     subtitle: "Bandingkan cabang terbaik, cabang terlemah, dan lokasi dengan gap rekonsiliasi terbesar.",
     label: "Performa Cabang",
+    icon: "storefront",
+    hint: "Ranking outlet aktif",
   },
   platform: {
     id: "platform-page",
     title: "Performa platform",
     subtitle: "Analisis komposisi GMV, Ads, dan Diskon per channel delivery utama.",
     label: "Performa Platform",
+    icon: "apps",
+    hint: "Analisis tiap channel",
   },
   reconciliation: {
     id: "reconciliation-page",
     title: "Rekonsiliasi",
     subtitle: "Identifikasi selisih antara terima dan uang masuk dengan detail sampai kode mutasi.",
     label: "Rekonsiliasi",
+    icon: "receipt_long",
+    hint: "Detail cash in dan gap",
   },
 };
 
@@ -176,7 +188,11 @@ function renderPageNav() {
     .map(
       (page) => `
         <button class="nav-pill ${state.activePage === page ? "is-active" : ""}" data-page="${page}">
-          ${escapeHtml(pageMeta[page].label)}
+          <span class="material-symbols-outlined nav-icon">${escapeHtml(pageMeta[page].icon)}</span>
+          <span class="nav-copy">
+            <strong>${escapeHtml(pageMeta[page].label)}</strong>
+            <small>${escapeHtml(pageMeta[page].hint)}</small>
+          </span>
         </button>
       `
     )
@@ -262,11 +278,30 @@ async function loadFilters() {
   }
 }
 
+const metricMeta = {
+  gmv: { icon: "payments", note: "Nilai penjualan bruto", className: "is-featured", chip: "Total GMV" },
+  nett_gmv: { icon: "account_balance_wallet", note: "Pendapatan bersih setelah potongan", className: "is-featured", chip: "Nett revenue" },
+  run_rate: { icon: "rocket_launch", note: "Proyeksi nilai akhir bulan berjalan", className: "is-featured", chip: "Projected" },
+  ads: { icon: "campaign", note: "Belanja ads selama periode aktif", className: "is-compact", chip: "Media spend" },
+  diskon: { icon: "local_offer", note: "Diskon dan potongan promo", className: "is-compact", chip: "Promo cost" },
+  cash_in: { icon: "point_of_sale", note: "Dana aktual yang sudah masuk", className: "is-compact", chip: "Actual cash in" },
+  selisih: { icon: "warning", note: "Gap antara terima dan uang masuk", className: "is-compact", chip: "Attention" },
+};
+
 function metricCard(card) {
+  const meta = metricMeta[card.key] || { icon: "analytics", note: "Ringkasan metrik utama", className: "is-compact", chip: "Metric" };
   return `
-    <article class="kpi-card accent-${escapeHtml(card.accent)}">
+    <article class="kpi-card ${escapeHtml(meta.className)} accent-${escapeHtml(card.accent)}">
+      <div class="kpi-card-orb"></div>
+      <div class="metric-head">
+        <div class="metric-icon">
+          <span class="material-symbols-outlined">${escapeHtml(meta.icon)}</span>
+        </div>
+        <span class="metric-chip">${escapeHtml(meta.chip)}</span>
+      </div>
       <div class="metric-label">${escapeHtml(card.label)}</div>
       <div class="metric-value">${formatCurrency(card.value)}</div>
+      <div class="card-subtitle">${escapeHtml(meta.note)}</div>
       <div class="metric-delta ${deltaClass(card.delta)}">${formatSignedPercent(card.delta)}</div>
     </article>
   `;
@@ -285,16 +320,22 @@ function renderOverview() {
     <div class="section-heading">
       <div>
         <h3>KPI utama bisnis</h3>
-        <p>Semua card mengikuti definisi GMV, Nett GMV, Cash In, Selisih, dan Run Rate pada PRD.</p>
+        <p>Tampilan ringkas gaya command center untuk melihat angka penting tanpa perlu berpindah halaman.</p>
       </div>
       <span class="badge">Periode ${escapeHtml(formatDate(payload.period.start))} - ${escapeHtml(formatDate(payload.period.end))}</span>
     </div>
 
     <div class="metric-grid">${payload.cards.map(metricCard).join("")}</div>
 
-    <div class="content-grid" style="margin-top:18px;">
+    <div class="content-grid" style="margin-top:20px;">
       <article class="insight-card">
-        <h3>Insight cepat</h3>
+        <div class="card-headline">
+          <div>
+            <h3>Insight cepat</h3>
+            <p>Prioritas yang layak dipantau pada periode aktif.</p>
+          </div>
+          <span class="badge subtle">Live highlights</span>
+        </div>
         <ul class="insight-list">
           <li>
             <strong>Cabang teratas: ${escapeHtml(highlights.top_branch?.cabang || "-")}</strong>
@@ -328,10 +369,15 @@ function renderOverview() {
       </article>
     </div>
 
-    <div class="table-grid" style="margin-top:18px;">
+    <div class="table-grid" style="margin-top:20px;">
       <article class="table-card">
-        <h3>Log sinkronisasi terakhir</h3>
-        <p>Sinkronisasi harian jam 12:00 dapat dipicu manual sesuai requirement F-06.</p>
+        <div class="card-headline">
+          <div>
+            <h3>Operational sync log</h3>
+            <p>Audit terbaru untuk pipeline Google Sheets ke warehouse.</p>
+          </div>
+          <span class="badge subtle">Latest runs</span>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -366,8 +412,13 @@ function renderOverview() {
       </article>
 
       <article class="list-card">
-        <h3>Cakupan filter aktif</h3>
-        <p>Global filter yang sama diterapkan konsisten pada semua halaman dashboard.</p>
+        <div class="card-headline">
+          <div>
+            <h3>Filter snapshot</h3>
+            <p>Scope global yang sedang dipakai untuk seluruh halaman.</p>
+          </div>
+          <span class="badge subtle">Applied filters</span>
+        </div>
         <ul class="bullet-list">
           <li><strong>Tanggal</strong>${escapeHtml(formatDate(state.filters.start))} sampai ${escapeHtml(formatDate(state.filters.end))}</li>
           <li><strong>Cabang</strong>${escapeHtml(state.filters.cabang.join(", "))}</li>
@@ -759,10 +810,10 @@ function renderSyncSummary() {
 
   const sourceMode = state.data.syncLogs?.source_mode || state.data.kpi?.source_mode || "sample";
   el.syncSummary.innerHTML = `
-    <strong>${escapeHtml(latest.status)}</strong><br />
-    Sinkronisasi terakhir ${escapeHtml(formatDate(latest.started_at))} oleh ${escapeHtml(latest.triggered_by)}.<br />
-    ${escapeHtml(String(latest.rows_upserted))} baris di-upsert, ${escapeHtml(String(latest.rows_failed))} gagal.<br />
-    Data source: ${escapeHtml(sourceMode)}
+    <div class="sync-badge ${latest.status === "SUCCESS" ? "is-success" : "is-warning"}">${escapeHtml(latest.status)}</div>
+    <strong>Sinkronisasi terakhir ${escapeHtml(formatDate(latest.started_at))}</strong>
+    <span>Dipicu oleh ${escapeHtml(latest.triggered_by)} dengan ${escapeHtml(String(latest.rows_upserted))} baris di-upsert.</span>
+    <span>Baris gagal: ${escapeHtml(String(latest.rows_failed))} • Data source: ${escapeHtml(sourceMode)}</span>
   `;
 }
 
