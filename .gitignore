@@ -1,3 +1,6 @@
 __pycache__/
 .vercel/
 Dashboard Minicalore/
+.env
+.env.local
+credentials/

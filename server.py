@@ -11,6 +11,8 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from dashboard_store import current_source_mode, load_filter_options, load_sync_logs, load_transactions, trigger_sync
+
 
 ROOT_DIR = Path(__file__).resolve().parent
 STATIC_DIR = ROOT_DIR / "static"
@@ -259,6 +261,10 @@ def apply_filters(records: list[dict], filters: dict) -> list[dict]:
     ]
 
 
+def sample_records(filters: dict) -> list[dict]:
+    return apply_filters(TRANSACTIONS, filters)
+
+
 def previous_period_records(filters: dict) -> list[dict]:
     days = (filters["end"] - filters["start"]).days + 1
     previous_end = filters["start"] - timedelta(days=1)
@@ -268,7 +274,7 @@ def previous_period_records(filters: dict) -> list[dict]:
         "start": previous_start,
         "end": previous_end,
     }
-    return apply_filters(TRANSACTIONS, previous_filters)
+    return load_transactions(previous_filters, sample_records)
 
 
 def aggregate_by_key(records: list[dict], key: str) -> list[dict]:
@@ -311,11 +317,11 @@ def month_to_date_records(filters: dict) -> list[dict]:
         "start": month_start,
         "end": target_end,
     }
-    return apply_filters(TRANSACTIONS, scoped)
+    return load_transactions(scoped, sample_records)
 
 
 def build_kpi_payload(filters: dict) -> dict:
-    current_records = apply_filters(TRANSACTIONS, filters)
+    current_records = load_transactions(filters, sample_records)
     current_totals = totals(current_records)
     previous_totals = totals(previous_period_records(filters))
     month_records = month_to_date_records(filters)
@@ -358,11 +364,12 @@ def build_kpi_payload(filters: dict) -> dict:
             "top_channel": channel_rows[0] if channel_rows else None,
             "largest_gap_branch": max(branch_rows, key=lambda row: abs(row["selisih"]), default=None),
         },
+        "source_mode": current_source_mode(),
     }
 
 
 def build_trend_payload(filters: dict) -> dict:
-    current_records = apply_filters(TRANSACTIONS, filters)
+    current_records = load_transactions(filters, sample_records)
     by_day: dict[str, dict] = {}
     pointer = filters["start"]
     while pointer <= filters["end"]:
@@ -396,7 +403,7 @@ def build_trend_payload(filters: dict) -> dict:
 
 
 def build_brand_payload(filters: dict) -> dict:
-    current_records = apply_filters(TRANSACTIONS, filters)
+    current_records = load_transactions(filters, sample_records)
     rows = aggregate_by_key(current_records, "brand")
     total_gmv = safe_sum(current_records, "penjualan")
     for row in rows:
@@ -405,7 +412,7 @@ def build_brand_payload(filters: dict) -> dict:
 
 
 def build_branch_payload(filters: dict) -> dict:
-    current_records = apply_filters(TRANSACTIONS, filters)
+    current_records = load_transactions(filters, sample_records)
     rows = aggregate_by_key(current_records, "cabang")
     gap_rows = sorted(rows, key=lambda row: row["selisih"], reverse=True)
     return {
@@ -416,7 +423,7 @@ def build_branch_payload(filters: dict) -> dict:
 
 
 def build_platform_payload(filters: dict) -> dict:
-    current_records = apply_filters(TRANSACTIONS, filters)
+    current_records = load_transactions(filters, sample_records)
     rows = aggregate_by_key(current_records, "channel")
     total_gmv = safe_sum(current_records, "penjualan")
     for row in rows:
@@ -426,7 +433,7 @@ def build_platform_payload(filters: dict) -> dict:
 
 
 def build_reconciliation_payload(filters: dict, only_difference: bool) -> dict:
-    current_records = apply_filters(TRANSACTIONS, filters)
+    current_records = load_transactions(filters, sample_records)
     rows = []
     for item in current_records:
         if only_difference and (item["selisih"] is None or abs(item["selisih"]) < 0.01):
@@ -525,7 +532,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             "/api/rekonsiliasi": lambda: self.send_json(
                 build_reconciliation_payload(filters, params.get("only_difference", ["false"])[0] == "true")
             ),
-            "/api/sync/logs": lambda: self.send_json({"logs": SYNC_LOGS[:8]}),
+            "/api/sync/logs": lambda: self.send_json({"logs": load_sync_logs(8, SYNC_LOGS), "source_mode": current_source_mode()}),
         }
         handler = routes.get(parsed.path)
         if handler is None:
@@ -536,13 +543,18 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def handle_filters(self) -> None:
         self.send_json(
             {
-                "cabang": BRANCHES,
-                "brand": BRANDS,
-                "channel": CHANNELS,
+                **load_filter_options(
+                    {
+                        "cabang": BRANCHES,
+                        "brand": BRANDS,
+                        "channel": CHANNELS,
+                    }
+                ),
                 "defaults": {
                     "start": REFERENCE_DATE.replace(day=1).isoformat(),
                     "end": REFERENCE_DATE.isoformat(),
                 },
+                "source_mode": current_source_mode(),
             }
         )
 
@@ -566,6 +578,17 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         )
 
     def handle_manual_sync(self) -> None:
+        try:
+            latest_log = trigger_sync("MANUAL", self.manual_sample_sync)
+        except Exception as exc:  # noqa: BLE001
+            self.send_json(
+                {"error": f"Sync gagal dijalankan: {exc}", "source_mode": current_source_mode()},
+                status=503,
+            )
+            return
+        self.send_json({"message": "Sync manual berhasil dipicu.", "log": latest_log, "source_mode": current_source_mode()})
+
+    def manual_sample_sync(self, triggered_by: str) -> dict:
         now = datetime.now(APP_TIMEZONE)
         sync_id = str(uuid.uuid4())
         rows_read = len(TRANSACTIONS)
@@ -579,11 +602,11 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             "rows_upserted": rows_read,
             "rows_failed": rows_failed,
             "error_message": "",
-            "triggered_by": "MANUAL",
+            "triggered_by": triggered_by,
         }
         SYNC_LOGS.insert(0, latest_log)
         del SYNC_LOGS[12:]
-        self.send_json({"message": "Sync manual berhasil dipicu.", "log": latest_log})
+        return latest_log
 
     def send_json(self, payload: dict, status: int = 200) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")

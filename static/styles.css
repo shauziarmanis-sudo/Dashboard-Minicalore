@@ -29,6 +29,7 @@ body {
   min-height: 100vh;
   color: var(--text);
   font-family: "Space Grotesk", "Segoe UI", sans-serif;
+  font-size: 15px;
   background:
     radial-gradient(circle at top left, rgba(114, 143, 113, 0.24), transparent 28%),
     radial-gradient(circle at right center, rgba(195, 139, 45, 0.18), transparent 32%),
@@ -42,20 +43,22 @@ input {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 360px 1fr;
-  gap: 24px;
-  padding: 24px;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 18px;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 18px;
 }
 
 .sidebar,
 .content {
-  min-height: calc(100vh - 48px);
+  min-height: calc(100vh - 36px);
 }
 
 .sidebar {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
 }
 
 .sidebar-panel,
@@ -83,7 +86,7 @@ input {
 }
 
 .brand-panel {
-  padding: 28px;
+  padding: 22px;
   background:
     linear-gradient(145deg, rgba(33, 85, 64, 0.92), rgba(60, 98, 82, 0.82)),
     linear-gradient(145deg, rgba(255, 255, 255, 0.12), transparent);
@@ -91,10 +94,10 @@ input {
 }
 
 .brand-panel h1 {
-  margin: 8px 0 10px;
+  margin: 0 0 10px;
   font-family: "Newsreader", Georgia, serif;
-  font-size: clamp(2rem, 3vw, 2.65rem);
-  line-height: 1.05;
+  font-size: clamp(1.65rem, 2.3vw, 2.15rem);
+  line-height: 1.02;
 }
 
 .brand-panel p,
@@ -107,15 +110,14 @@ input {
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.14em;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 700;
   opacity: 0.78;
 }
 
 .session-panel,
-.filter-panel,
 .sync-panel {
-  padding: 22px;
+  padding: 18px;
 }
 
 .session-head,
@@ -182,12 +184,13 @@ input {
 
 input[type="date"],
 input[type="text"],
-input[type="password"] {
+input[type="password"],
+select {
   width: 100%;
   border-radius: var(--radius-sm);
   border: 1px solid rgba(32, 24, 16, 0.14);
   background: var(--panel-strong);
-  padding: 12px 14px;
+  padding: 10px 12px;
   color: var(--text);
 }
 
@@ -234,8 +237,8 @@ input[type="password"] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 46px;
-  padding: 0 18px;
+  min-height: 40px;
+  padding: 0 16px;
   border-radius: 999px;
   border: 1px solid transparent;
   cursor: pointer;
@@ -280,11 +283,11 @@ input[type="password"] {
 
 .content {
   display: grid;
-  gap: 18px;
+  gap: 14px;
 }
 
 .topbar {
-  padding: 24px 28px;
+  padding: 18px 22px;
   background:
     linear-gradient(135deg, rgba(255, 250, 244, 0.96), rgba(248, 240, 228, 0.82)),
     linear-gradient(145deg, rgba(255, 255, 255, 0.16), transparent);
@@ -293,20 +296,139 @@ input[type="password"] {
 .topbar h2 {
   margin: 6px 0;
   font-family: "Newsreader", Georgia, serif;
-  font-size: clamp(2rem, 3vw, 2.6rem);
+  font-size: clamp(1.65rem, 2.2vw, 2.15rem);
 }
 
 #page-subtitle {
   margin: 0;
   color: var(--muted);
-  max-width: 760px;
+  max-width: 700px;
+}
+
+.toolbar-panel {
+  padding: 16px 18px;
+  border-radius: var(--radius-xl);
+  backdrop-filter: blur(20px);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+.toolbar-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.compact-field {
+  gap: 8px;
+}
+
+.dropdown-field {
+  position: relative;
+  border: 1px solid rgba(32, 24, 16, 0.14);
+  border-radius: var(--radius-sm);
+  background: var(--panel-strong);
+}
+
+.dropdown-field summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.dropdown-field summary::-webkit-details-marker {
+  display: none;
+}
+
+.dropdown-field summary span {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.dropdown-field summary strong {
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.dropdown-field[open] {
+  box-shadow: 0 14px 30px rgba(57, 37, 19, 0.12);
+}
+
+.dropdown-menu {
+  position: absolute;
+  inset: calc(100% + 8px) 0 auto 0;
+  z-index: 3;
+  display: grid;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(32, 24, 16, 0.14);
+  background: rgba(255, 252, 247, 0.98);
+  box-shadow: 0 16px 34px rgba(57, 37, 19, 0.18);
+}
+
+.dropdown-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(33, 85, 64, 0.04);
+  color: var(--text);
+}
+
+.dropdown-option input {
+  width: 16px;
+  height: 16px;
+}
+
+.channel-defaults {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(32, 24, 16, 0.08);
+}
+
+.field-caption {
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.static-pill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.static-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(33, 85, 64, 0.1);
+  color: var(--forest);
+  font-size: 0.86rem;
+  font-weight: 700;
 }
 
 .page-nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  padding: 14px;
+  gap: 10px;
+  padding: 12px;
 }
 
 .nav-pill {
@@ -323,12 +445,12 @@ input[type="password"] {
 }
 
 .status-banner {
-  padding: 16px 20px;
+  padding: 12px 16px;
   color: var(--muted);
 }
 
 .page-section {
-  padding: 24px;
+  padding: 20px;
 }
 
 .is-hidden {
@@ -345,7 +467,7 @@ input[type="password"] {
 }
 
 .metric-grid {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
 .summary-grid {
@@ -371,7 +493,7 @@ input[type="password"] {
 .table-card,
 .list-card {
   border-radius: var(--radius-lg);
-  padding: 20px;
+  padding: 16px;
 }
 
 .kpi-card {
@@ -386,8 +508,8 @@ input[type="password"] {
 }
 
 .metric-value {
-  margin: 12px 0 8px;
-  font-size: clamp(1.45rem, 2vw, 2rem);
+  margin: 10px 0 6px;
+  font-size: clamp(1.2rem, 1.6vw, 1.6rem);
   font-weight: 700;
 }
 
@@ -437,7 +559,7 @@ input[type="password"] {
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .section-heading h3,
@@ -511,7 +633,7 @@ input[type="password"] {
 
 .chart-frame svg {
   width: 100%;
-  min-width: 560px;
+  min-width: 460px;
   height: auto;
 }
 
@@ -526,7 +648,7 @@ table {
 
 th,
 td {
-  padding: 12px 10px;
+  padding: 10px 8px;
   border-bottom: 1px solid rgba(32, 24, 16, 0.08);
   text-align: left;
   white-space: nowrap;
@@ -570,7 +692,7 @@ tr:last-child td {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .toggle {
@@ -660,6 +782,10 @@ tr:last-child td {
     grid-template-columns: 1fr;
   }
 
+  .toolbar-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .content-grid,
   .split-grid {
     grid-template-columns: 1fr;
@@ -668,17 +794,18 @@ tr:last-child td {
 
 @media (max-width: 760px) {
   .app-shell {
-    padding: 14px;
-    gap: 14px;
+    padding: 12px;
+    gap: 12px;
   }
 
   .topbar,
   .sidebar-panel,
-  .page-section {
-    padding: 18px;
+  .page-section,
+  .toolbar-panel {
+    padding: 16px;
   }
 
-  .filter-grid,
+  .toolbar-grid,
   .login-card {
     grid-template-columns: 1fr;
   }
@@ -693,6 +820,11 @@ tr:last-child td {
     width: 100%;
     justify-content: flex-start;
     flex-wrap: wrap;
+  }
+
+  .channel-defaults {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .metric-grid,

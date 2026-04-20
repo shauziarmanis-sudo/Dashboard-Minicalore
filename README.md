@@ -51,6 +51,7 @@ http://127.0.0.1:8000
 - Frontend statis tetap berada di folder `static/`
 - API untuk Vercel tersedia di folder `api/`
 - Routing deploy diatur lewat `vercel.json`
+- Dependency Python deploy ada di `requirements.txt`
 
 Endpoint yang tersedia saat deploy tetap sama:
 
@@ -74,13 +75,34 @@ Endpoint yang tersedia saat deploy tetap sama:
 
 ## Catatan implementasi
 
-- Data saat ini masih berupa sample in-memory agar aplikasi bisa langsung dipreview tanpa setup PostgreSQL dan Google Sheets API.
-- Struktur endpoint, filter, KPI, role, dan halaman sudah disejajarkan dengan PRD sehingga tahap berikutnya tinggal mengganti source data sample dengan pipeline ETL dan database riil.
+- App sekarang mendukung dua mode data:
+  - `sample` jika kredensial belum diisi
+  - `postgres` jika `DATABASE_URL` dan konfigurasi Google Sheets sudah tersedia
+- Endpoint sync manual akan menarik data Google Sheets, menghitung ulang `terima` dan `selisih`, lalu UPSERT ke PostgreSQL saat mode aktual aktif.
 - Tanggal referensi demo default adalah `2026-04-20` agar sesuai PRD. Jika perlu, bisa diubah melalui environment variable `DASHBOARD_REFERENCE_DATE`.
+
+## Konfigurasi data aktual
+
+Isi environment variable berikut di local atau Vercel:
+
+- `DATABASE_URL`
+- `GOOGLE_SHEETS_CSV_URL`
+
+Atau jika sheet private:
+
+- `DATABASE_URL`
+- `GOOGLE_SHEETS_SPREADSHEET_ID`
+- `GOOGLE_SHEETS_WORKSHEET_NAME`
+- `GOOGLE_SERVICE_ACCOUNT_JSON`
+
+Catatan:
+
+- Jika memakai service account, spreadsheet harus dibagikan ke email service account.
+- Jika memakai `GOOGLE_SHEETS_CSV_URL`, sheet harus bisa diakses oleh URL export CSV tersebut.
 
 ## Langkah lanjutan yang disarankan
 
-1. Ganti dataset sample di `server.py` dengan koneksi PostgreSQL.
-2. Tambahkan ETL reader Google Sheets dan UPSERT harian pukul 12:00 WIB.
-3. Tambahkan autentikasi produksi dan RBAC server-side.
-4. Tambahkan notifikasi error sync ke email atau Slack.
+1. Isi environment variable aktual di Vercel dan local.
+2. Jalankan sync manual pertama untuk mengisi tabel `transaksi_harian`.
+3. Tambahkan scheduler harian pukul 12:00 WIB untuk endpoint sync.
+4. Tambahkan autentikasi produksi dan RBAC server-side.

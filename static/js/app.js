@@ -84,7 +84,6 @@ const el = {
   channelOptions: document.getElementById("channel-options"),
   branchCount: document.getElementById("branch-count"),
   brandCount: document.getElementById("brand-count"),
-  channelCount: document.getElementById("channel-count"),
   overviewPage: document.getElementById("overview-page"),
   trendPage: document.getElementById("trend-page"),
   brandPage: document.getElementById("brand-page"),
@@ -151,7 +150,7 @@ function renderSession() {
 
   el.roleChip.textContent = state.session.role;
   el.sessionName.textContent = state.session.name;
-  el.sessionCopy.textContent = `Akses aktif sebagai ${state.session.username}. Halaman mengikuti kebijakan role-based PRD.`;
+  el.sessionCopy.textContent = `Akses aktif sebagai ${state.session.username}. Halaman mengikuti akses role masing-masing.`;
 }
 
 function renderPageNav() {
@@ -173,11 +172,11 @@ function updatePageHeader() {
   el.pageSubtitle.textContent = current.subtitle;
 }
 
-function renderPills(container, values, selected, name) {
+function renderDropdownOptions(container, values, selected, name) {
   container.innerHTML = values
     .map(
       (value) => `
-        <label class="pill-option">
+        <label class="dropdown-option">
           <input type="checkbox" name="${name}" value="${escapeHtml(value)}" ${selected.includes(value) ? "checked" : ""} />
           <span>${escapeHtml(value)}</span>
         </label>
@@ -186,32 +185,39 @@ function renderPills(container, values, selected, name) {
     .join("");
 }
 
+function renderStaticPills(container, values) {
+  container.innerHTML = values.map((value) => `<span class="static-pill">${escapeHtml(value)}</span>`).join("");
+}
+
 function getSelectedValues(name) {
   return Array.from(document.querySelectorAll(`input[name="${name}"]:checked`)).map((input) => input.value);
 }
 
 function updateFilterCounts() {
-  el.branchCount.textContent = `${state.filters.cabang.length} dipilih`;
-  el.brandCount.textContent = `${state.filters.brand.length} dipilih`;
-  el.channelCount.textContent = `${state.filters.channel.length} dipilih`;
+  const allBranchesSelected = state.filters.cabang.length === state.filterOptions.cabang.length;
+  const allBrandsSelected = state.filters.brand.length === state.filterOptions.brand.length;
+  el.branchCount.textContent = allBranchesSelected ? "Semua cabang" : `${state.filters.cabang.length} cabang`;
+  el.brandCount.textContent = allBrandsSelected ? "Semua brand" : `${state.filters.brand.length} brand`;
 }
 
 function syncFiltersToForm() {
   el.startDate.value = state.filters.start;
   el.endDate.value = state.filters.end;
-  renderPills(el.branchOptions, state.filterOptions.cabang, state.filters.cabang, "cabang");
-  renderPills(el.brandOptions, state.filterOptions.brand, state.filters.brand, "brand");
-  renderPills(el.channelOptions, state.filterOptions.channel, state.filters.channel, "channel");
+  renderDropdownOptions(el.branchOptions, state.filterOptions.cabang, state.filters.cabang, "cabang");
+  renderDropdownOptions(el.brandOptions, state.filterOptions.brand, state.filters.brand, "brand");
+  renderStaticPills(el.channelOptions, state.filterOptions.channel);
   updateFilterCounts();
 }
 
 function readFiltersFromForm() {
+  const selectedBranches = getSelectedValues("cabang");
+  const selectedBrands = getSelectedValues("brand");
   state.filters = {
     start: el.startDate.value,
     end: el.endDate.value,
-    cabang: getSelectedValues("cabang"),
-    brand: getSelectedValues("brand"),
-    channel: getSelectedValues("channel"),
+    cabang: selectedBranches.length ? selectedBranches : [...state.filterOptions.cabang],
+    brand: selectedBrands.length ? selectedBrands : [...state.filterOptions.brand],
+    channel: [...state.filterOptions.channel],
   };
   updateFilterCounts();
 }
@@ -232,6 +238,9 @@ async function loadFilters() {
   if (!state.filters.start) {
     resetFiltersToDefault();
   } else {
+    if (!state.filters.channel?.length) {
+      state.filters.channel = [...state.filterOptions.channel];
+    }
     syncFiltersToForm();
   }
 }
@@ -731,10 +740,12 @@ function renderSyncSummary() {
     return;
   }
 
+  const sourceMode = state.data.syncLogs?.source_mode || state.data.kpi?.source_mode || "sample";
   el.syncSummary.innerHTML = `
     <strong>${escapeHtml(latest.status)}</strong><br />
     Sinkronisasi terakhir ${escapeHtml(formatDate(latest.started_at))} oleh ${escapeHtml(latest.triggered_by)}.<br />
-    ${escapeHtml(String(latest.rows_upserted))} baris di-upsert, ${escapeHtml(String(latest.rows_failed))} gagal.
+    ${escapeHtml(String(latest.rows_upserted))} baris di-upsert, ${escapeHtml(String(latest.rows_failed))} gagal.<br />
+    Data source: ${escapeHtml(sourceMode)}
   `;
 }
 
@@ -877,6 +888,16 @@ function bindEvents() {
   el.resetFilters.addEventListener("click", async () => {
     resetFiltersToDefault();
     await refreshData();
+  });
+  document.addEventListener("click", (event) => {
+    const branchDropdown = document.getElementById("branch-dropdown");
+    const brandDropdown = document.getElementById("brand-dropdown");
+    if (branchDropdown && !branchDropdown.contains(event.target)) {
+      branchDropdown.removeAttribute("open");
+    }
+    if (brandDropdown && !brandDropdown.contains(event.target)) {
+      brandDropdown.removeAttribute("open");
+    }
   });
 }
 
