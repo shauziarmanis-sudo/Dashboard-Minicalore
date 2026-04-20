@@ -121,8 +121,11 @@ HEADER_ALIASES = {
 
 CHANNEL_LOOKUP = {
     "gofood": "GoFood",
+    "gojek": "GoFood",
     "grabfood": "GrabFood",
+    "grab": "GrabFood",
     "shopeefood": "ShopeeFood",
+    "shopee": "ShopeeFood",
 }
 
 ENV_FILES = [".env.local", ".env"]
@@ -230,7 +233,7 @@ def sync_google_sheet_to_postgres(triggered_by: str):
     failed = 0
     last_error = ""
 
-    with closing(module.connect(database_url_with_timeout())) as connection:
+    with closing(connect_database(module)) as connection:
         ensure_schema(connection)
         with connection.cursor() as cursor:
             cursor.execute(
@@ -241,14 +244,27 @@ def sync_google_sheet_to_postgres(triggered_by: str):
                 (sync_id, started_at, "RUNNING", rows_read, 0, 0, "", triggered_by),
             )
 
+            transformed_rows = []
             for row in raw_rows:
                 try:
-                    transformed = transform_sheet_row(row, batch_id)
-                    cursor.execute(UPSERT_SQL, transformed)
-                    upserted += 1
+                    transformed_rows.append(transform_sheet_row(row, batch_id))
                 except Exception as exc:  # noqa: BLE001
                     failed += 1
                     last_error = str(exc)
+
+            for batch in chunked(transformed_rows, 500):
+                try:
+                    cursor.executemany(UPSERT_SQL, batch)
+                    upserted += len(batch)
+                except Exception as exc:  # noqa: BLE001
+                    last_error = str(exc)
+                    for item in batch:
+                        try:
+                            cursor.execute(UPSERT_SQL, item)
+                            upserted += 1
+                        except Exception as row_exc:  # noqa: BLE001
+                            failed += 1
+                            last_error = str(row_exc)
 
             status = "SUCCESS" if failed == 0 else "PARTIAL"
             finished_at = datetime.utcnow()
@@ -277,6 +293,11 @@ def sync_google_sheet_to_postgres(triggered_by: str):
         "error_message": last_error,
         "triggered_by": triggered_by,
     }
+
+
+def chunked(items, size: int):
+    for index in range(0, len(items), size):
+        yield items[index : index + size]
 
 
 def ensure_schema(connection):
@@ -317,7 +338,7 @@ def query_transactions(filters: dict):
         ORDER BY tanggal ASC, cabang ASC, brand ASC, channel ASC
     """
     try:
-        with closing(module.connect(database_url_with_timeout())) as connection:
+        with closing(connect_database(module)) as connection:
             ensure_schema(connection)
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -369,7 +390,7 @@ def query_filter_options():
         return [row[0] for row in cursor.fetchall() if row[0]]
 
     try:
-        with closing(module.connect(database_url_with_timeout())) as connection:
+        with closing(connect_database(module)) as connection:
             ensure_schema(connection)
             with connection.cursor() as cursor:
                 cabang = fetch_distinct(cursor, "cabang")
@@ -386,7 +407,7 @@ def query_sync_logs(limit: int):
         return []
 
     try:
-        with closing(module.connect(database_url_with_timeout())) as connection:
+        with closing(connect_database(module)) as connection:
             ensure_schema(connection)
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -499,11 +520,18 @@ def load_psycopg():
     return None
 
 
+def connect_database(module):
+    connection = module.connect(database_url_with_timeout())
+    if hasattr(connection, "prepare_threshold"):
+        connection.prepare_threshold = None
+    return connection
+
+
 def transform_sheet_row(raw_row: dict, batch_id: str):
     normalized = map_raw_row(raw_row)
     tanggal = parse_date(normalized["tanggal"])
     cabang = normalize_text(normalized["cabang"], title_case=True)
-    brand = normalize_text(normalized["brand"], title_case=True)
+    brand = normalize_text(normalized["brand"], title_case=False)
     channel = normalize_channel(normalized["channel"])
 
     penjualan = parse_number(normalized["penjualan"])
@@ -552,7 +580,14 @@ def map_raw_row(raw_row: dict):
                 mapped[target] = flat[alias_key]
                 break
 
-    required = ("tanggal", "cabang", "channel", "brand", "penjualan")
+    if mapped.get("nama_akun") and (
+        not mapped.get("cabang") or not mapped.get("channel") or not mapped.get("brand")
+    ):
+        derived = derive_account_dimensions(mapped["nama_akun"])
+        for key, value in derived.items():
+            mapped.setdefault(key, value)
+
+    required = ("tanggal", "cabang", "channel", "brand")
     missing = [field for field in required if not mapped.get(field)]
     if missing:
         raise ValueError(f"Kolom wajib kosong atau tidak ditemukan: {', '.join(missing)}")
@@ -575,6 +610,34 @@ def normalize_channel(value: str):
     if key not in CHANNEL_LOOKUP:
         raise ValueError(f"Channel tidak valid: {value}")
     return CHANNEL_LOOKUP[key]
+
+
+def derive_account_dimensions(value: str):
+    raw = normalize_text(value, title_case=False)
+    if not raw:
+        return {}
+
+    parts = [segment.strip() for segment in raw.split(" - ") if segment.strip()]
+    if len(parts) < 3:
+        parts = [segment.strip() for segment in raw.split("-") if segment.strip()]
+
+    channel_index = None
+    for index, segment in enumerate(parts):
+        if normalize_header(segment) in CHANNEL_LOOKUP:
+            channel_index = index
+            break
+
+    if channel_index is None:
+        raise ValueError(f"Tidak bisa menemukan channel dari Nama Akun: {value}")
+
+    cabang = " - ".join(parts[:channel_index]).strip()
+    channel = parts[channel_index].strip()
+    brand = " - ".join(parts[channel_index + 1 :]).strip()
+    return {
+        "cabang": cabang,
+        "channel": channel,
+        "brand": brand,
+    }
 
 
 def parse_date(value):
