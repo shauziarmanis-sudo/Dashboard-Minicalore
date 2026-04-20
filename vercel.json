@@ -1,0 +1,9 @@
+{
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/styles.css", "destination": "/static/styles.css" },
+    { "source": "/js/(.*)", "destination": "/static/js/$1" },
+    { "source": "/", "destination": "/static/index.html" },
+    { "source": "/(.*)", "destination": "/static/index.html" }
+  ]
+}

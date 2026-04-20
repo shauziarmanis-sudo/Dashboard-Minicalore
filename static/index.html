@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dashboard Penjualan Restoran Terpusat</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Newsreader:wght@500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-panel brand-panel">
+          <span class="eyebrow">PRD-driven custom web app</span>
+          <h1>Dashboard Penjualan Restoran Terpusat</h1>
+          <p>
+            Satu tempat untuk memantau GMV, ads, performa brand, performa cabang,
+            dan rekonsiliasi dana antar channel delivery.
+          </p>
+        </div>
+
+        <div class="sidebar-panel session-panel" id="session-panel">
+          <div class="session-head">
+            <span class="eyebrow">Session</span>
+            <span class="role-chip" id="role-chip">Belum login</span>
+          </div>
+          <div class="session-meta">
+            <strong id="session-name">Akses dashboard</strong>
+            <span id="session-copy">Login untuk membuka halaman sesuai role.</span>
+          </div>
+        </div>
+
+        <div class="sidebar-panel filter-panel">
+          <div class="panel-heading">
+            <div>
+              <span class="eyebrow">Global filter</span>
+              <h2>Kontrol semua halaman</h2>
+            </div>
+            <button class="ghost-button" id="reset-filters">Reset</button>
+          </div>
+
+          <div class="filter-grid">
+            <label class="field">
+              <span>Mulai</span>
+              <input type="date" id="start-date" />
+            </label>
+            <label class="field">
+              <span>Selesai</span>
+              <input type="date" id="end-date" />
+            </label>
+          </div>
+
+          <div class="field-group">
+            <div class="field-head">
+              <span>Cabang</span>
+              <small id="branch-count">0 dipilih</small>
+            </div>
+            <div class="pill-list" id="branch-options"></div>
+          </div>
+
+          <div class="field-group">
+            <div class="field-head">
+              <span>Brand</span>
+              <small id="brand-count">0 dipilih</small>
+            </div>
+            <div class="pill-list" id="brand-options"></div>
+          </div>
+
+          <div class="field-group">
+            <div class="field-head">
+              <span>Channel</span>
+              <small id="channel-count">0 dipilih</small>
+            </div>
+            <div class="pill-list" id="channel-options"></div>
+          </div>
+
+          <button class="primary-button full-width" id="apply-filters">Terapkan filter</button>
+        </div>
+
+        <div class="sidebar-panel sync-panel">
+          <div class="panel-heading">
+            <div>
+              <span class="eyebrow">Sync status</span>
+              <h2>Google Sheets ke dashboard</h2>
+            </div>
+          </div>
+          <div id="sync-summary" class="sync-summary">
+            Menunggu login untuk menampilkan status sinkronisasi terbaru.
+          </div>
+        </div>
+      </aside>
+
+      <main class="content">
+        <header class="topbar">
+          <div>
+            <span class="eyebrow">Multi-cabang | Multi-brand | Multi-platform</span>
+            <h2 id="page-title">Ringkasan bisnis real-time</h2>
+            <p id="page-subtitle">
+              Gunakan filter di kiri untuk melihat performa restoran lintas cabang dan channel.
+            </p>
+          </div>
+          <div class="topbar-actions">
+            <button class="secondary-button" id="sync-button">Sync manual</button>
+            <button class="ghost-button" id="logout-button">Logout</button>
+          </div>
+        </header>
+
+        <nav class="page-nav" id="page-nav"></nav>
+        <div class="status-banner" id="status-banner">Menunggu autentikasi.</div>
+
+        <section class="page-section" id="overview-page"></section>
+        <section class="page-section is-hidden" id="trend-page"></section>
+        <section class="page-section is-hidden" id="brand-page"></section>
+        <section class="page-section is-hidden" id="branch-page"></section>
+        <section class="page-section is-hidden" id="platform-page"></section>
+        <section class="page-section is-hidden" id="reconciliation-page"></section>
+      </main>
+    </div>
+
+    <div class="login-modal" id="login-modal">
+      <div class="login-card">
+        <div class="login-copy">
+          <span class="eyebrow">Demo access</span>
+          <h2>Masuk sesuai persona PRD</h2>
+          <p>
+            Role-based access disiapkan mengikuti kebutuhan Executive, Finance,
+            Marketing, dan Operations.
+          </p>
+          <ul class="credential-list">
+            <li><strong>owner</strong> / minicalore123</li>
+            <li><strong>finance</strong> / minicalore123</li>
+            <li><strong>marketing</strong> / minicalore123</li>
+            <li><strong>ops</strong> / minicalore123</li>
+          </ul>
+        </div>
+
+        <form class="login-form" id="login-form">
+          <label class="field">
+            <span>Username</span>
+            <input type="text" id="username" value="owner" autocomplete="username" required />
+          </label>
+
+          <label class="field">
+            <span>Password</span>
+            <input
+              type="password"
+              id="password"
+              value="minicalore123"
+              autocomplete="current-password"
+              required
+            />
+          </label>
+
+          <button class="primary-button" type="submit">Masuk ke dashboard</button>
+          <p class="form-error" id="login-error"></p>
+        </form>
+      </div>
+    </div>
+
+    <script type="module" src="/js/app.js"></script>
+  </body>
+</html>
