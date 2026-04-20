@@ -235,18 +235,29 @@ def parse_multi(params: dict, key: str, universe: list[str]) -> list[str]:
     return valid or list(universe)
 
 
+def filter_universes() -> dict:
+    return load_filter_options(
+        {
+            "cabang": BRANCHES,
+            "brand": BRANDS,
+            "channel": CHANNELS,
+        }
+    )
+
+
 def parse_filters(params: dict) -> dict:
     default_start = REFERENCE_DATE.replace(day=1)
     start = date.fromisoformat(params.get("start", [default_start.isoformat()])[0])
     end = date.fromisoformat(params.get("end", [REFERENCE_DATE.isoformat()])[0])
     if start > end:
         start, end = end, start
+    universes = filter_universes()
     return {
         "start": start,
         "end": end,
-        "cabang": parse_multi(params, "cabang", BRANCHES),
-        "brand": parse_multi(params, "brand", BRANDS),
-        "channel": parse_multi(params, "channel", CHANNELS),
+        "cabang": parse_multi(params, "cabang", universes["cabang"]),
+        "brand": parse_multi(params, "brand", universes["brand"]),
+        "channel": parse_multi(params, "channel", universes["channel"]),
     }
 
 
@@ -543,13 +554,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def handle_filters(self) -> None:
         self.send_json(
             {
-                **load_filter_options(
-                    {
-                        "cabang": BRANCHES,
-                        "brand": BRANDS,
-                        "channel": CHANNELS,
-                    }
-                ),
+                **filter_universes(),
                 "defaults": {
                     "start": REFERENCE_DATE.replace(day=1).isoformat(),
                     "end": REFERENCE_DATE.isoformat(),
