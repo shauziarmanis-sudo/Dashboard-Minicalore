@@ -8,8 +8,8 @@ import {
   formatDate,
   formatPercent,
   formatSignedPercent,
-} from "./utils.js";
-import { renderDonutChart, renderGroupedBars, renderHorizontalBars, renderTrendChart } from "./charts.js";
+} from "./utils.js?v=20260421-2";
+import { renderDonutChart, renderGroupedBars, renderHorizontalBars, renderTrendChart } from "./charts.js?v=20260421-2";
 
 const pageMeta = {
   overview: {
@@ -98,6 +98,7 @@ const el = {
 
 async function apiFetch(url, options = {}) {
   const response = await fetch(url, {
+    cache: "no-store",
     headers: {
       "Content-Type": "application/json",
     },
@@ -109,6 +110,22 @@ async function apiFetch(url, options = {}) {
     throw new Error(payload.error || "Terjadi kesalahan saat memanggil API.");
   }
   return payload;
+}
+
+function describeError(error) {
+  if (!error) {
+    return "Unknown error";
+  }
+  if (typeof error === "string") {
+    return error;
+  }
+  return error.message || "Unknown error";
+}
+
+function reportLoadFailure(context, error) {
+  const detail = describeError(error);
+  console.error(`[dashboard] ${context}`, error);
+  setStatus(`Gagal memuat data live: ${detail}`);
 }
 
 function setStatus(message) {
@@ -790,44 +807,49 @@ async function refreshData() {
   readFiltersFromForm();
   setStatus("Memuat ulang KPI, tren, performa brand, cabang, platform, dan rekonsiliasi...");
 
-  const query = buildQuery(state.filters);
-  const requests = [apiFetch(`/api/kpi?${query}`), apiFetch("/api/sync/logs")];
-  const pageLoaders = {
-    trend: () => apiFetch(`/api/trend/daily?${query}`),
-    brand: () => apiFetch(`/api/brand?${query}`),
-    branch: () => apiFetch(`/api/cabang?${query}`),
-    platform: () => apiFetch(`/api/platform?${query}`),
-    reconciliation: () =>
-      apiFetch(`/api/rekonsiliasi?${buildQuery(state.filters, { only_difference: state.onlyDifference })}`),
-  };
+  try {
+    const query = buildQuery(state.filters);
+    const requests = [apiFetch(`/api/kpi?${query}`), apiFetch("/api/sync/logs")];
+    const pageLoaders = {
+      trend: () => apiFetch(`/api/trend/daily?${query}`),
+      brand: () => apiFetch(`/api/brand?${query}`),
+      branch: () => apiFetch(`/api/cabang?${query}`),
+      platform: () => apiFetch(`/api/platform?${query}`),
+      reconciliation: () =>
+        apiFetch(`/api/rekonsiliasi?${buildQuery(state.filters, { only_difference: state.onlyDifference })}`),
+    };
 
-  if (pageLoaders[state.activePage]) {
-    requests.push(pageLoaders[state.activePage]());
-  }
+    if (pageLoaders[state.activePage]) {
+      requests.push(pageLoaders[state.activePage]());
+    }
 
-  const responses = await Promise.all(requests);
-  let cursor = 0;
-  state.data.kpi = responses[cursor++];
-  state.data.syncLogs = responses[cursor++];
+    const responses = await Promise.all(requests);
+    let cursor = 0;
+    state.data.kpi = responses[cursor++];
+    state.data.syncLogs = responses[cursor++];
 
-  if (state.activePage === "trend") {
-    state.data.trend = responses[cursor++];
-  }
-  if (state.activePage === "brand") {
-    state.data.brand = responses[cursor++];
-  }
-  if (state.activePage === "branch") {
-    state.data.branch = responses[cursor++];
-  }
-  if (state.activePage === "platform") {
-    state.data.platform = responses[cursor++];
-  }
-  if (state.activePage === "reconciliation") {
-    state.data.reconciliation = responses[cursor++];
-  }
+    if (state.activePage === "trend") {
+      state.data.trend = responses[cursor++];
+    }
+    if (state.activePage === "brand") {
+      state.data.brand = responses[cursor++];
+    }
+    if (state.activePage === "branch") {
+      state.data.branch = responses[cursor++];
+    }
+    if (state.activePage === "platform") {
+      state.data.platform = responses[cursor++];
+    }
+    if (state.activePage === "reconciliation") {
+      state.data.reconciliation = responses[cursor++];
+    }
 
-  renderActivePage();
-  setStatus(`Dashboard siap. Data terfilter dari ${formatDate(state.filters.start)} sampai ${formatDate(state.filters.end)}.`);
+    renderActivePage();
+    setStatus(`Dashboard siap. Data terfilter dari ${formatDate(state.filters.start)} sampai ${formatDate(state.filters.end)}.`);
+  } catch (error) {
+    reportLoadFailure("refreshData", error);
+    throw error;
+  }
 }
 
 async function handleLogin(event) {
@@ -858,12 +880,16 @@ async function handleManualSync() {
     return;
   }
 
-  setStatus("Memicu sync manual sesuai requirement F-06...");
-  await apiFetch("/api/sync/trigger", {
-    method: "POST",
-    body: JSON.stringify({ triggered_by: state.session.username }),
-  });
-  await refreshData();
+  try {
+    setStatus("Memicu sync manual sesuai requirement F-06...");
+    await apiFetch("/api/sync/trigger", {
+      method: "POST",
+      body: JSON.stringify({ triggered_by: state.session.username }),
+    });
+    await refreshData();
+  } catch (error) {
+    reportLoadFailure("handleManualSync", error);
+  }
 }
 
 function handleLogout() {
@@ -909,18 +935,22 @@ function bindEvents() {
 }
 
 async function init() {
-  bindEvents();
-  await loadFilters();
+  try {
+    bindEvents();
+    await loadFilters();
 
-  if (state.session) {
-    ensureActivePage();
-    el.loginModal.classList.add("is-hidden");
-    await refreshData();
-    return;
+    if (state.session) {
+      ensureActivePage();
+      el.loginModal.classList.add("is-hidden");
+      await refreshData();
+      return;
+    }
+
+    renderSession();
+    setStatus("Menunggu login.");
+  } catch (error) {
+    reportLoadFailure("init", error);
   }
-
-  renderSession();
-  setStatus("Menunggu login.");
 }
 
 init();
