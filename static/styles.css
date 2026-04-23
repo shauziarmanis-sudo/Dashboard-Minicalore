@@ -19,7 +19,7 @@
   --radius-lg: 16px;
   --radius-md: 14px;
   --radius-sm: 12px;
-  --sidebar-width: 240px;
+  --sidebar-width: 286px;
   --topbar-height: 74px;
   --font-body: "Manrope", "Segoe UI", sans-serif;
   --font-display: "Sora", "Manrope", sans-serif;
@@ -80,6 +80,7 @@ summary {
   border-right: 1px solid rgba(224, 228, 234, 0.9);
   backdrop-filter: blur(14px);
   z-index: 20;
+  overflow-y: auto;
 }
 
 .brand-panel,
@@ -105,6 +106,13 @@ summary {
 .brand-panel,
 .nav-panel {
   padding: 18px;
+}
+
+.nav-panel {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
 }
 
 .brand-panel {
@@ -188,6 +196,8 @@ summary {
 .page-nav {
   display: grid;
   gap: 8px;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .nav-pill {
@@ -286,6 +296,12 @@ summary {
 
 .topbar-leading {
   min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.topbar-actions {
+  flex-shrink: 0;
 }
 
 .topbar-copy {
@@ -312,7 +328,7 @@ summary {
   align-items: center;
   gap: 8px;
   min-height: 36px;
-  max-width: 360px;
+  max-width: 280px;
   padding: 0 14px;
   border-radius: 999px;
   border: 1px solid rgba(66, 133, 244, 0.12);
@@ -700,12 +716,64 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   align-items: center;
   gap: 12px;
   flex: 1 1 320px;
+  flex-wrap: wrap;
 }
 
 .static-pill-list {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.channel-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.channel-pill input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.channel-pill span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(224, 228, 234, 0.9);
+  background: var(--surface-soft);
+  color: var(--muted-strong);
+  font-size: 0.76rem;
+  font-weight: 700;
+  transition:
+    transform var(--duration-fast) var(--ease),
+    border-color var(--duration-fast) var(--ease),
+    background-color var(--duration-fast) var(--ease),
+    color var(--duration-fast) var(--ease),
+    box-shadow var(--duration-fast) var(--ease);
+}
+
+.channel-pill:hover span {
+  transform: translateY(-1px);
+  border-color: rgba(66, 133, 244, 0.18);
+}
+
+.channel-pill input:focus-visible + span {
+  outline: 2px solid rgba(66, 133, 244, 0.24);
+  outline-offset: 2px;
+}
+
+.channel-pill input:checked + span,
+.channel-pill.is-selected span {
+  background: rgba(66, 133, 244, 0.1);
+  border-color: rgba(66, 133, 244, 0.18);
+  color: #4d67c3;
+  box-shadow: 0 8px 18px rgba(66, 133, 244, 0.08);
 }
 
 .compact-button {
@@ -817,6 +885,12 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   grid-template-columns: 1.2fr 0.88fr;
 }
 
+.platform-score-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
 .split-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -852,6 +926,15 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .kpi-card.is-compact {
   grid-column: span 3;
   min-height: 158px;
+}
+
+.platform-score-card {
+  min-width: 0;
+  min-height: 164px;
+}
+
+.platform-score-card .metric-value {
+  word-break: break-word;
 }
 
 .kpi-card-orb {
@@ -986,6 +1069,15 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   width: 100%;
   min-width: 440px;
   height: auto;
+}
+
+#brand-donut .chart-frame {
+  max-width: 280px;
+}
+
+#brand-donut .summary-inline {
+  align-items: flex-start;
+  flex-wrap: wrap;
 }
 
 .legend {
@@ -1327,6 +1419,10 @@ tr:last-child td {
     grid-template-columns: 1fr;
   }
 
+  .platform-score-grid {
+    grid-template-columns: 1fr;
+  }
+
   .topbar-leading {
     flex-direction: column;
     align-items: flex-start;
@@ -1387,7 +1483,8 @@ tr:last-child td {
   .toolbar-grid,
   .login-card,
   .metric-grid,
-  .vva-grid {
+  .vva-grid,
+  .platform-score-grid {
     grid-template-columns: 1fr;
   }
 

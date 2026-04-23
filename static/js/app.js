@@ -8,7 +8,7 @@ import {
   formatDate,
   formatPercent,
   formatSignedPercent,
-} from "./utils.js?v=20260424-2";
+} from "./utils.js?v=20260424-3";
 import { renderDonutChart, renderGroupedBars, renderHorizontalBars, renderTrendChart } from "./charts.js?v=20260424-2";
 
 const plainNumberFormatter = new Intl.NumberFormat("id-ID", {
@@ -432,8 +432,17 @@ function renderDropdownOptions(container, values, selected, name) {
     .join("");
 }
 
-function renderStaticPills(container, values) {
-  container.innerHTML = values.map((value) => `<span class="static-pill">${escapeHtml(value)}</span>`).join("");
+function renderStaticPills(container, values, selected = values) {
+  container.innerHTML = values
+    .map(
+      (value) => `
+        <label class="channel-pill ${selected.includes(value) ? "is-selected" : ""}">
+          <input type="checkbox" name="channel" value="${escapeHtml(value)}" ${selected.includes(value) ? "checked" : ""} />
+          <span>${escapeHtml(value)}</span>
+        </label>
+      `
+    )
+    .join("");
 }
 
 function getSelectedValues(name) {
@@ -455,7 +464,7 @@ function syncFiltersToForm() {
   el.endDate.value = state.filters.end;
   renderDropdownOptions(el.branchOptions, state.filterOptions.cabang, state.filters.cabang, "cabang");
   renderDropdownOptions(el.brandOptions, state.filterOptions.brand, state.filters.brand, "brand");
-  renderStaticPills(el.channelOptions, state.filterOptions.channel);
+  renderStaticPills(el.channelOptions, state.filterOptions.channel, state.filters.channel);
   updateFilterCounts();
 }
 
@@ -465,12 +474,13 @@ function readFiltersFromForm() {
   }
   const selectedBranches = getSelectedValues("cabang");
   const selectedBrands = getSelectedValues("brand");
+  const selectedChannels = getSelectedValues("channel");
   state.filters = {
     start: el.startDate.value,
     end: el.endDate.value,
     cabang: selectedBranches.length ? selectedBranches : [...state.filterOptions.cabang],
     brand: selectedBrands.length ? selectedBrands : [...state.filterOptions.brand],
-    channel: [...state.filterOptions.channel],
+    channel: selectedChannels.length ? selectedChannels : [...state.filterOptions.channel],
   };
   updateFilterCounts();
 }
@@ -765,18 +775,17 @@ function renderBrandPage() {
   }
 
   el.brandPage.innerHTML = `
-    <div class="content-grid">
-      <article class="chart-card">
-        <h3>Ranking brand berdasarkan GMV</h3>
-        <p>Urutan descending sesuai requirement halaman Performa Brand.</p>
-        <div id="brand-bars" style="margin-top:18px;"></div>
-      </article>
-      <article class="chart-card">
-        <h3>Kontribusi GMV per brand</h3>
-        <p>Donut chart menunjukkan share masing-masing brand terhadap total GMV.</p>
-        <div id="brand-donut" style="margin-top:18px;"></div>
-      </article>
-    </div>
+    <article class="chart-card">
+      <h3>Ranking brand berdasarkan GMV</h3>
+      <p>Urutan descending sesuai requirement halaman Performa Brand.</p>
+      <div id="brand-bars" style="margin-top:18px;"></div>
+    </article>
+
+    <article class="chart-card" style="margin-top:18px;">
+      <h3>Kontribusi GMV per brand</h3>
+      <p>Donut chart menunjukkan share masing-masing brand terhadap total GMV.</p>
+      <div id="brand-donut" style="margin-top:18px;"></div>
+    </article>
 
     <div class="table-card" style="margin-top:18px;">
       <h3>Tabel detail brand</h3>
@@ -905,11 +914,11 @@ function renderPlatformPage() {
   }
 
   el.platformPage.innerHTML = `
-    <div class="metric-grid">
+    <div class="platform-score-grid">
       ${payload.rows
         .map(
           (row) => `
-            <article class="kpi-card">
+            <article class="kpi-card platform-score-card">
               <div class="summary-inline">
                 <span class="metric-label">${escapeHtml(row.channel)}</span>
                 <span class="badge" style="background:${escapeHtml(row.color)}22; color:${escapeHtml(row.color)};">${escapeHtml(row.channel)}</span>
@@ -1292,6 +1301,7 @@ function bindEvents() {
   el.endDate.addEventListener("change", scheduleAutoRefresh);
   el.branchOptions.addEventListener("change", scheduleAutoRefresh);
   el.brandOptions.addEventListener("change", scheduleAutoRefresh);
+  el.channelOptions.addEventListener("change", scheduleAutoRefresh);
   document.addEventListener("click", (event) => {
     if (el.branchDropdown && !el.branchDropdown.contains(event.target)) {
       el.branchDropdown.removeAttribute("open");
