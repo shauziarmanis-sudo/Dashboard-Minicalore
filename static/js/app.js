@@ -8,8 +8,16 @@ import {
   formatDate,
   formatPercent,
   formatSignedPercent,
-} from "./utils.js?v=20260423-1";
-import { renderDonutChart, renderGroupedBars, renderHorizontalBars, renderTrendChart } from "./charts.js?v=20260423-1";
+} from "./utils.js?v=20260423-2";
+import { renderDonutChart, renderGroupedBars, renderHorizontalBars, renderTrendChart } from "./charts.js?v=20260423-2";
+
+const plainNumberFormatter = new Intl.NumberFormat("id-ID", {
+  maximumFractionDigits: 0,
+});
+const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const motionState = {
+  values: new Map(),
+};
 
 const pageMeta = {
   overview: {
@@ -108,6 +116,10 @@ const el = {
   resetFilters: document.getElementById("reset-filters"),
 };
 
+function motionAllowed() {
+  return !prefersReducedMotion.matches;
+}
+
 async function apiFetch(url, options = {}) {
   const response = await fetch(url, {
     cache: "no-store",
@@ -142,6 +154,196 @@ function reportLoadFailure(context, error) {
 
 function setStatus(message) {
   el.statusBanner.textContent = message;
+}
+
+function setButtonBusy(button, isBusy, busyLabel) {
+  if (!button) {
+    return;
+  }
+
+  if (isBusy) {
+    if (!button.dataset.defaultLabel) {
+      button.dataset.defaultLabel = button.innerHTML;
+    }
+    button.disabled = true;
+    button.classList.add("is-busy");
+    if (busyLabel) {
+      button.innerHTML = `<span class="spinner-dot" aria-hidden="true"></span>${escapeHtml(busyLabel)}`;
+    }
+    return;
+  }
+
+  button.disabled = false;
+  button.classList.remove("is-busy");
+  if (button.dataset.defaultLabel) {
+    button.innerHTML = button.dataset.defaultLabel;
+  }
+}
+
+function formatAnimatedValue(value, format) {
+  if (format === "percent") {
+    return formatPercent(value);
+  }
+  if (format === "integer") {
+    return plainNumberFormatter.format(Math.round(Number(value || 0)));
+  }
+  return formatCurrency(value);
+}
+
+function animatedValue(tagName, className, value, format, metricId) {
+  const numericValue = Number(value || 0);
+  return `<${tagName} class="${className}" data-animate-number="true" data-format="${format}" data-raw-value="${numericValue}" data-metric-id="${metricId}">${formatAnimatedValue(numericValue, format)}</${tagName}>`;
+}
+
+function animateValue(element, from, to, format, metricId) {
+  const roundedTarget = Number(to || 0);
+  if (!motionAllowed()) {
+    element.textContent = formatAnimatedValue(roundedTarget, format);
+    motionState.values.set(metricId, roundedTarget);
+    return;
+  }
+
+  const startValue = Number(from || 0);
+  const diff = roundedTarget - startValue;
+  const duration = 220;
+  const startAt = performance.now();
+
+  function tick(now) {
+    const progress = Math.min((now - startAt) / duration, 1);
+    const eased = 1 - Math.pow(1 - progress, 4);
+    const nextValue = startValue + diff * eased;
+    element.textContent = formatAnimatedValue(nextValue, format);
+
+    if (progress < 1) {
+      window.requestAnimationFrame(tick);
+      return;
+    }
+
+    element.textContent = formatAnimatedValue(roundedTarget, format);
+    motionState.values.set(metricId, roundedTarget);
+  }
+
+  window.requestAnimationFrame(tick);
+}
+
+function activateValueTransitions(root = document) {
+  if (!root) {
+    return;
+  }
+  root.querySelectorAll("[data-animate-number='true']").forEach((element) => {
+    const metricId = element.dataset.metricId;
+    const format = element.dataset.format || "currency";
+    const nextValue = Number(element.dataset.rawValue || 0);
+    const previousValue = motionState.values.get(metricId);
+
+    if (previousValue === undefined) {
+      animateValue(element, 0, nextValue, format, metricId);
+      return;
+    }
+
+    if (Math.abs(previousValue - nextValue) < 0.01) {
+      element.textContent = formatAnimatedValue(nextValue, format);
+      motionState.values.set(metricId, nextValue);
+      return;
+    }
+
+    element.classList.remove("value-updated");
+    void element.offsetWidth;
+    element.classList.add("value-updated");
+    animateValue(element, previousValue, nextValue, format, metricId);
+  });
+}
+
+function renderOverviewSkeleton() {
+  return `
+    <div class="section-heading skeleton-shell">
+      <div class="skeleton-copy">
+        <div class="skeleton-line skeleton-line-title"></div>
+        <div class="skeleton-line skeleton-line-subtitle"></div>
+      </div>
+      <div class="skeleton-pill"></div>
+    </div>
+    <div class="metric-grid">
+      ${Array.from({ length: 7 }, () => `
+        <article class="kpi-card skeleton-card">
+          <div class="skeleton-row">
+            <div class="skeleton-avatar"></div>
+            <div class="skeleton-pill"></div>
+          </div>
+          <div class="skeleton-line skeleton-line-label"></div>
+          <div class="skeleton-line skeleton-line-value"></div>
+          <div class="skeleton-line skeleton-line-subtitle"></div>
+        </article>
+      `).join("")}
+    </div>
+    <div class="content-grid page-gap-sm">
+      ${Array.from({ length: 2 }, () => `
+        <article class="summary-card skeleton-card">
+          <div class="skeleton-line skeleton-line-title"></div>
+          <div class="skeleton-line skeleton-line-value"></div>
+          <div class="skeleton-line skeleton-line-subtitle"></div>
+          <div class="skeleton-line skeleton-line-subtitle short"></div>
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderGenericSkeleton(title) {
+  return `
+    <div class="section-heading skeleton-shell">
+      <div class="skeleton-copy">
+        <div class="skeleton-line skeleton-line-title"></div>
+        <div class="skeleton-line skeleton-line-subtitle"></div>
+      </div>
+      <div class="skeleton-pill"></div>
+    </div>
+    <article class="chart-card skeleton-card">
+      <div class="skeleton-line skeleton-line-title"></div>
+      <div class="skeleton-chart"></div>
+      <div class="skeleton-line skeleton-line-subtitle"></div>
+    </article>
+    <article class="table-card skeleton-card page-gap-sm">
+      <div class="skeleton-line skeleton-line-title"></div>
+      <div class="skeleton-table">
+        ${Array.from({ length: 5 }, () => `<div class="skeleton-row-line"></div>`).join("")}
+      </div>
+    </article>
+  `;
+}
+
+function showLoadingState() {
+  const target = el[`${state.activePage}Page`];
+  if (!target) {
+    return;
+  }
+
+  renderPageNav();
+  updatePageHeader();
+  togglePages();
+  document.body.classList.add("is-refreshing");
+  el.statusBanner.classList.add("is-busy");
+  target.classList.add("is-loading");
+  target.innerHTML = state.activePage === "overview" ? renderOverviewSkeleton() : renderGenericSkeleton(state.activePage);
+}
+
+function clearLoadingState() {
+  document.body.classList.remove("is-refreshing");
+  el.statusBanner.classList.remove("is-busy");
+  Object.values(pageMeta).forEach((meta) => {
+    const page = document.getElementById(meta.id);
+    page.classList.remove("is-loading");
+  });
+}
+
+function playSurfaceEntrance() {
+  const target = el[`${state.activePage}Page`];
+  if (!target || !motionAllowed()) {
+    return;
+  }
+  target.classList.remove("is-settling");
+  void target.offsetWidth;
+  target.classList.add("is-settling");
 }
 
 function persistSession(session) {
@@ -187,7 +389,7 @@ function renderPageNav() {
   el.pageNav.innerHTML = pages
     .map(
       (page) => `
-        <button class="nav-pill ${state.activePage === page ? "is-active" : ""}" data-page="${page}">
+        <button class="nav-pill ${state.activePage === page ? "is-active" : ""}" data-page="${page}" type="button" ${state.activePage === page ? 'aria-current="page"' : ""}>
           <span class="material-symbols-outlined nav-icon">${escapeHtml(pageMeta[page].icon)}</span>
           <span class="nav-copy">
             <strong>${escapeHtml(pageMeta[page].label)}</strong>
@@ -293,7 +495,7 @@ function metricCard(card) {
         <span class="metric-chip">${escapeHtml(meta.chip)}</span>
       </div>
       <div class="metric-label">${escapeHtml(card.label)}</div>
-      <div class="metric-value">${formatCurrency(card.value)}</div>
+      ${animatedValue("div", "metric-value", card.value, "currency", `card:${card.key}`)}
       <div class="card-subtitle">${escapeHtml(meta.note)}</div>
       <div class="metric-delta ${deltaClass(card.delta)}">${formatSignedPercent(card.delta)}</div>
     </article>
@@ -317,7 +519,7 @@ function vvaCard(label, data, icon) {
         <span class="metric-chip">VVA Group</span>
       </div>
       <div class="metric-label">${escapeHtml(label)}</div>
-      <div class="metric-value">${formatCurrency(data?.gmv || 0)}</div>
+      ${animatedValue("div", "metric-value", data?.gmv || 0, "currency", `vva:${label}`)}
       <div class="card-subtitle">
         Kontribusi ${formatPercent(data?.contribution)} dari total GMV
       </div>
@@ -392,13 +594,13 @@ function renderOverview() {
 
       <article class="summary-card">
         <span class="eyebrow">Derived KPI</span>
-        <strong>${formatPercent(payload.derived.collection_rate)}</strong>
+        ${animatedValue("strong", "", payload.derived.collection_rate || 0, "percent", "derived:collection_rate")}
         <small>Collection rate</small>
-        <strong>${formatPercent(payload.derived.net_margin)}</strong>
+        ${animatedValue("strong", "", payload.derived.net_margin || 0, "percent", "derived:net_margin")}
         <small>Net margin</small>
-        <strong>${formatPercent(payload.derived.ads_efficiency)}</strong>
+        ${animatedValue("strong", "", payload.derived.ads_efficiency || 0, "percent", "derived:ads_efficiency")}
         <small>Efisiensi ads</small>
-        <strong>${formatPercent(payload.derived.discount_rate)}</strong>
+        ${animatedValue("strong", "", payload.derived.discount_rate || 0, "percent", "derived:discount_rate")}
         <small>Discount rate</small>
       </article>
     </div>
@@ -675,7 +877,7 @@ function renderPlatformPage() {
                 <span class="metric-label">${escapeHtml(row.channel)}</span>
                 <span class="badge" style="background:${escapeHtml(row.color)}22; color:${escapeHtml(row.color)};">${escapeHtml(row.channel)}</span>
               </div>
-              <div class="metric-value">${formatCurrency(row.gmv)}</div>
+              ${animatedValue("div", "metric-value", row.gmv, "currency", `platform:${row.channel}`)}
               <div class="card-subtitle">Kontribusi ${formatPercent(row.contribution)} dari total GMV</div>
             </article>
           `
@@ -766,17 +968,17 @@ function renderReconciliationPage() {
     <div class="summary-grid">
       <article class="summary-card">
         <span class="eyebrow">Total Terima</span>
-        <strong>${formatCurrency(payload.summary.terima)}</strong>
+        ${animatedValue("strong", "", payload.summary.terima, "currency", "recon:terima")}
         <small>Nett GMV pada baris terfilter</small>
       </article>
       <article class="summary-card">
         <span class="eyebrow">Total Uang Masuk</span>
-        <strong>${formatCurrency(payload.summary.uang_masuk)}</strong>
+        ${animatedValue("strong", "", payload.summary.uang_masuk, "currency", "recon:uang_masuk")}
         <small>Cash in aktual yang tercatat</small>
       </article>
       <article class="summary-card">
         <span class="eyebrow">Total Selisih</span>
-        <strong class="${payload.summary.selisih > 0 ? "cell-negative" : ""}">${formatCurrency(payload.summary.selisih)}</strong>
+        ${animatedValue("strong", payload.summary.selisih > 0 ? "cell-negative" : "", payload.summary.selisih, "currency", "recon:selisih")}
         <small>${payload.summary.rows} baris tampil di tabel</small>
       </article>
     </div>
@@ -882,6 +1084,9 @@ function renderActivePage() {
   if (allowedPages().includes("reconciliation") && state.data.reconciliation) {
     renderReconciliationPage();
   }
+
+  activateValueTransitions(el[`${state.activePage}Page`]);
+  playSurfaceEntrance();
 }
 
 async function refreshData() {
@@ -891,6 +1096,8 @@ async function refreshData() {
 
   readFiltersFromForm();
   setStatus("Memuat ulang KPI, tren, performa brand, cabang, platform, dan rekonsiliasi...");
+  showLoadingState();
+  setButtonBusy(el.applyFilters, true, "Memuat");
 
   try {
     const query = buildQuery(state.filters);
@@ -934,6 +1141,9 @@ async function refreshData() {
   } catch (error) {
     reportLoadFailure("refreshData", error);
     throw error;
+  } finally {
+    clearLoadingState();
+    setButtonBusy(el.applyFilters, false);
   }
 }
 
@@ -967,6 +1177,7 @@ async function handleManualSync() {
 
   try {
     setStatus("Memicu sync manual sesuai requirement F-06...");
+    setButtonBusy(el.syncButton, true, "Syncing");
     await apiFetch("/api/sync/trigger", {
       method: "POST",
       body: JSON.stringify({ triggered_by: state.session.username }),
@@ -974,6 +1185,8 @@ async function handleManualSync() {
     await refreshData();
   } catch (error) {
     reportLoadFailure("handleManualSync", error);
+  } finally {
+    setButtonBusy(el.syncButton, false);
   }
 }
 

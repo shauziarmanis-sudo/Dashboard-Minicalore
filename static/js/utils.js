@@ -111,5 +111,20 @@ export function deltaClass(value) {
 }
 
 export function emptyState(title, copy) {
-  return `<div class="empty-state"><strong>${escapeHtml(title)}</strong><p>${escapeHtml(copy)}</p></div>`;
+  return `
+    <div class="empty-state">
+      <div class="empty-state-illustration" aria-hidden="true">
+        <svg viewBox="0 0 160 120" role="presentation">
+          <rect x="18" y="26" width="124" height="68" rx="18" fill="rgba(0, 98, 148, 0.08)" />
+          <rect x="30" y="40" width="58" height="10" rx="5" fill="rgba(0, 98, 148, 0.15)" />
+          <rect x="30" y="58" width="84" height="8" rx="4" fill="rgba(95, 108, 122, 0.14)" />
+          <rect x="30" y="72" width="64" height="8" rx="4" fill="rgba(95, 108, 122, 0.10)" />
+          <circle cx="118" cy="53" r="12" fill="rgba(16, 185, 129, 0.14)" />
+          <path d="M112 53h12M118 47v12" stroke="rgba(16, 185, 129, 0.66)" stroke-width="2.5" stroke-linecap="round" />
+        </svg>
+      </div>
+      <strong>${escapeHtml(title)}</strong>
+      <p>${escapeHtml(copy)}</p>
+    </div>
+  `;
 }

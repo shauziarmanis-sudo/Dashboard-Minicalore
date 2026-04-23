@@ -1,4 +1,4 @@
-import { emptyState, escapeHtml, formatCompact, formatCurrency, formatDate } from "./utils.js?v=20260423-1";
+import { emptyState, escapeHtml, formatCompact, formatCurrency, formatDate } from "./utils.js?v=20260423-2";
 
 function scale(value, max, size) {
   if (!max) {
