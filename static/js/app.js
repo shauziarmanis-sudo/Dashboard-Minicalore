@@ -307,6 +307,32 @@ function metricCard(card) {
   `;
 }
 
+function vvaCard(label, data, icon) {
+  const deltaValue = typeof data?.delta === "number" ? data.delta : null;
+  const deltaClass_ = deltaValue === null ? "" : deltaValue >= 0 ? "positive" : "negative";
+  const deltaText = deltaValue !== null
+    ? `${deltaValue > 0 ? "+" : ""}${deltaValue.toFixed(1)}% vs periode sebelumnya`
+    : "vs periode sebelumnya";
+
+  return `
+    <article class="kpi-card vva-card">
+      <div class="kpi-card-orb"></div>
+      <div class="metric-head">
+        <div class="metric-icon">
+          <span class="material-symbols-outlined">${escapeHtml(icon)}</span>
+        </div>
+        <span class="metric-chip">VVA Group</span>
+      </div>
+      <div class="metric-label">${escapeHtml(label)}</div>
+      <div class="metric-value">${formatCurrency(data?.gmv || 0)}</div>
+      <div class="card-subtitle">
+        Kontribusi ${formatPercent(data?.contribution)} dari total GMV
+      </div>
+      <div class="metric-delta ${deltaClass_}">${escapeHtml(deltaText)}</div>
+    </article>
+  `;
+}
+
 function renderOverview() {
   const payload = state.data.kpi;
   const logs = state.data.syncLogs?.logs || [];
@@ -316,6 +342,20 @@ function renderOverview() {
   }
 
   const highlights = payload.highlights;
+  const vvaHtml = payload.vva ? `
+    <div class="section-heading" style="margin-top:24px;">
+      <div>
+        <h3>Ringkasan Penjualan VVA</h3>
+        <p>Kontribusi GMV dari cluster VVA Pusat (Jabodetabek) dan VVA Cabang (luar kota).</p>
+      </div>
+      <span class="badge">VVA Group</span>
+    </div>
+    <div class="vva-grid">
+      ${vvaCard("GMV VVA Pusat", payload.vva.pusat, "location_city")}
+      ${vvaCard("GMV VVA Cabang", payload.vva.cabang, "map")}
+    </div>
+  ` : "";
+
   el.overviewPage.innerHTML = `
     <div class="section-heading">
       <div>
@@ -326,6 +366,7 @@ function renderOverview() {
     </div>
 
     <div class="metric-grid">${payload.cards.map(metricCard).join("")}</div>
+    ${vvaHtml}
 
     <div class="content-grid" style="margin-top:20px;">
       <article class="insight-card">

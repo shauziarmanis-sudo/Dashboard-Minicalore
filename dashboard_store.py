@@ -130,6 +130,20 @@ CHANNEL_LOOKUP = {
 }
 
 ENV_FILES = [".env.local", ".env"]
+VVA_PUSAT_BRANCHES = [
+    "Alam Sutera", "Bintaro", "Blok A", "BSD Junction", "Cengkareng",
+    "Gading Serpong", "Galaxy Bekasi", "Greenlake", "Jatinegara",
+    "Jembatan Gambang 2", "Kalibata", "Karawaci", "Kelapa Gading", "Kemang",
+    "Kuningan", "Meruya", "Pepero Pizza Bintaro", "Pepero Pizza Blok A",
+    "Pepero Pizza Gading Serpong", "Pepero Pizza Graha Vortexa",
+    "Pepero Pizza Karawaci", "Pepero Pizza Kemang", "Pepero Pizza Meruya",
+    "Pepero Pizza PIK", "Pepero Pizza Sunter", "Pepero Pizza Tebet",
+    "PIK", "Rawasari", "Sunter", "Tanjung Duren", "Tebet",
+]
+VVA_CABANG_BRANCHES = [
+    "BDG - Cipaganti", "SBY - Darmo", "SBY - Galaxy",
+    "SBY - Gayungan", "SBY - Tunjungan",
+]
 
 
 def load_local_env():
@@ -233,6 +247,10 @@ def query_kpi_summary(filters: dict):
                 "cabang",
                 order_by="ABS(COALESCE(SUM(selisih), 0)) DESC",
             )
+            current_vva_pusat_gmv = query_vva_gmv(connection, filters, VVA_PUSAT_BRANCHES)
+            previous_vva_pusat_gmv = query_vva_gmv(connection, previous_filters, VVA_PUSAT_BRANCHES)
+            current_vva_cabang_gmv = query_vva_gmv(connection, filters, VVA_CABANG_BRANCHES)
+            previous_vva_cabang_gmv = query_vva_gmv(connection, previous_filters, VVA_CABANG_BRANCHES)
     except Exception:  # noqa: BLE001
         return None
 
@@ -269,6 +287,18 @@ def query_kpi_summary(filters: dict):
             "top_brand": top_brand,
             "top_channel": top_channel,
             "largest_gap_branch": largest_gap_branch,
+        },
+        "vva": {
+            "pusat": {
+                "gmv": current_vva_pusat_gmv,
+                "contribution": safe_pct(current_vva_pusat_gmv, current_totals["gmv"]),
+                "delta": change_pct(current_vva_pusat_gmv, previous_vva_pusat_gmv),
+            },
+            "cabang": {
+                "gmv": current_vva_cabang_gmv,
+                "contribution": safe_pct(current_vva_cabang_gmv, current_totals["gmv"]),
+                "delta": change_pct(current_vva_cabang_gmv, previous_vva_cabang_gmv),
+            },
         },
         "source_mode": "postgres",
     }
@@ -363,6 +393,24 @@ def query_top_group(connection, filters: dict, group_column: str, result_key: st
         "cash_in": current_or_zero(row[5]),
         "selisih": current_or_zero(row[6]),
     }
+
+
+def query_vva_gmv(connection, filters: dict, branch_list: list[str]) -> float:
+    where_sql, params = sql_where(filters)
+    placeholders = ", ".join(["%s"] * len(branch_list))
+    query = f"""
+        SELECT COALESCE(SUM(penjualan), 0)
+        FROM transaksi_harian
+        WHERE {where_sql}
+        AND LOWER(TRIM(cabang)) = ANY(
+            ARRAY[{placeholders}]::text[]
+        )
+    """
+    branch_lower = [branch.strip().lower() for branch in branch_list]
+    with connection.cursor() as cursor:
+        cursor.execute(query, params + branch_lower)
+        row = cursor.fetchone()
+    return current_or_zero(row[0]) if row else 0.0
 
 
 def sql_where(filters: dict):

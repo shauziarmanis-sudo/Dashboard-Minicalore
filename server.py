@@ -28,6 +28,20 @@ BRANCHES = [
     "BSD Serpong",
 ]
 BRANDS = ["Minicalore", "Ayam Bakar Nusantara", "Sate Rempah"]
+VVA_PUSAT_BRANCHES = [
+    "Alam Sutera", "Bintaro", "Blok A", "BSD Junction", "Cengkareng",
+    "Gading Serpong", "Galaxy Bekasi", "Greenlake", "Jatinegara",
+    "Jembatan Gambang 2", "Kalibata", "Karawaci", "Kelapa Gading", "Kemang",
+    "Kuningan", "Meruya", "Pepero Pizza Bintaro", "Pepero Pizza Blok A",
+    "Pepero Pizza Gading Serpong", "Pepero Pizza Graha Vortexa",
+    "Pepero Pizza Karawaci", "Pepero Pizza Kemang", "Pepero Pizza Meruya",
+    "Pepero Pizza PIK", "Pepero Pizza Sunter", "Pepero Pizza Tebet",
+    "PIK", "Rawasari", "Sunter", "Tanjung Duren", "Tebet",
+]
+VVA_CABANG_BRANCHES = [
+    "BDG - Cipaganti", "SBY - Darmo", "SBY - Galaxy",
+    "SBY - Gayungan", "SBY - Tunjungan",
+]
 CHANNEL_COLORS = {
     "GoFood": "#2f8f52",
     "GrabFood": "#17583d",
@@ -288,6 +302,31 @@ def previous_period_records(filters: dict) -> list[dict]:
     return load_transactions(previous_filters, sample_records)
 
 
+def compute_vva_summary(records: list[dict], branch_list: list[str], previous_records: list[dict], total_gmv: float) -> dict:
+    """
+    Hitung GMV total untuk subset cabang VVA.
+    Matching case-insensitive, strip whitespace.
+    """
+    branch_set = {branch.strip().lower() for branch in branch_list}
+
+    current = sum(
+        item["penjualan"]
+        for item in records
+        if item.get("cabang", "").strip().lower() in branch_set
+    )
+    previous = sum(
+        item["penjualan"]
+        for item in previous_records
+        if item.get("cabang", "").strip().lower() in branch_set
+    )
+
+    return {
+        "gmv": to_rupiah(current),
+        "contribution": percent(current, total_gmv),
+        "delta": change_rate(current, previous),
+    }
+
+
 def aggregate_by_key(records: list[dict], key: str) -> list[dict]:
     bucket: dict[str, dict] = {}
     for item in records:
@@ -339,7 +378,8 @@ def build_kpi_payload(filters: dict) -> dict:
 
     current_records = load_transactions(filters, sample_records)
     current_totals = totals(current_records)
-    previous_totals = totals(previous_period_records(filters))
+    previous_records = previous_period_records(filters)
+    previous_totals = totals(previous_records)
     month_records = month_to_date_records(filters)
     month_totals = totals(month_records)
     month_days = monthrange(filters["end"].year, filters["end"].month)[1]
@@ -349,6 +389,9 @@ def build_kpi_payload(filters: dict) -> dict:
     branch_rows = aggregate_by_key(current_records, "cabang")
     brand_rows = aggregate_by_key(current_records, "brand")
     channel_rows = aggregate_by_key(current_records, "channel")
+    total_gmv = current_totals["gmv"]
+    vva_pusat = compute_vva_summary(current_records, VVA_PUSAT_BRANCHES, previous_records, total_gmv)
+    vva_cabang = compute_vva_summary(current_records, VVA_CABANG_BRANCHES, previous_records, total_gmv)
 
     cards = [
         {"key": "gmv", "label": "GMV", "value": current_totals["gmv"], "delta": change_rate(current_totals["gmv"], previous_totals["gmv"]), "accent": "forest"},
@@ -379,6 +422,10 @@ def build_kpi_payload(filters: dict) -> dict:
             "top_brand": brand_rows[0] if brand_rows else None,
             "top_channel": channel_rows[0] if channel_rows else None,
             "largest_gap_branch": max(branch_rows, key=lambda row: abs(row["selisih"]), default=None),
+        },
+        "vva": {
+            "pusat": vva_pusat,
+            "cabang": vva_cabang,
         },
         "source_mode": current_source_mode(),
     }
@@ -430,7 +477,7 @@ def build_brand_payload(filters: dict) -> dict:
 def build_branch_payload(filters: dict) -> dict:
     current_records = load_transactions(filters, sample_records)
     rows = aggregate_by_key(current_records, "cabang")
-    gap_rows = sorted(rows, key=lambda row: row["selisih"], reverse=True)
+    gap_rows = sorted(rows, key=lambda row: abs(row["selisih"]), reverse=True)
     return {
         "top": rows[:5],
         "bottom": list(reversed(rows[-5:])),

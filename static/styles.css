@@ -775,9 +775,21 @@ select:focus {
 
 .metric-value {
   margin: 0;
-  font-size: clamp(1.55rem, 2vw, 2.35rem);
+  font-size: clamp(1.05rem, 1.3vw, 1.45rem);
   font-weight: 800;
   line-height: 1.05;
+}
+
+.vva-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 0;
+}
+
+.vva-card {
+  border-top: 4px solid #006194;
+  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(230,240,255,0.94));
 }
 
 .card-subtitle {
@@ -1137,6 +1149,10 @@ tr:last-child td {
   .toolbar-grid,
   .login-card,
   .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .vva-grid {
     grid-template-columns: 1fr;
   }
 
