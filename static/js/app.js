@@ -8,8 +8,8 @@ import {
   formatDate,
   formatPercent,
   formatSignedPercent,
-} from "./utils.js?v=20260421-3";
-import { renderDonutChart, renderGroupedBars, renderHorizontalBars, renderTrendChart } from "./charts.js?v=20260421-3";
+} from "./utils.js?v=20260423-1";
+import { renderDonutChart, renderGroupedBars, renderHorizontalBars, renderTrendChart } from "./charts.js?v=20260423-1";
 
 const pageMeta = {
   overview: {
@@ -268,14 +268,7 @@ function resetFiltersToDefault() {
 
 async function loadFilters() {
   state.filterOptions = await apiFetch("/api/filters");
-  if (!state.filters.start) {
-    resetFiltersToDefault();
-  } else {
-    if (!state.filters.channel?.length) {
-      state.filters.channel = [...state.filterOptions.channel];
-    }
-    syncFiltersToForm();
-  }
+  resetFiltersToDefault();
 }
 
 const metricMeta = {
@@ -283,7 +276,7 @@ const metricMeta = {
   nett_gmv: { icon: "account_balance_wallet", note: "Pendapatan bersih setelah potongan", className: "is-featured", chip: "Nett revenue" },
   run_rate: { icon: "rocket_launch", note: "Proyeksi nilai akhir bulan berjalan", className: "is-featured", chip: "Projected" },
   ads: { icon: "campaign", note: "Belanja ads selama periode aktif", className: "is-compact", chip: "Media spend" },
-  diskon: { icon: "local_offer", note: "Diskon dan potongan promo", className: "is-compact", chip: "Promo cost" },
+  diskon: { icon: "local_offer", note: "Diskon promo (harga coret) pada periode aktif", className: "is-compact", chip: "Promo discount" },
   cash_in: { icon: "point_of_sale", note: "Dana aktual yang sudah masuk", className: "is-compact", chip: "Actual cash in" },
   selisih: { icon: "warning", note: "Gap antara terima dan uang masuk", className: "is-compact", chip: "Attention" },
 };
@@ -343,7 +336,7 @@ function renderOverview() {
 
   const highlights = payload.highlights;
   const vvaHtml = payload.vva ? `
-    <div class="section-heading" style="margin-top:24px;">
+    <div class="section-heading" style="margin-top:14px;">
       <div>
         <h3>Ringkasan Penjualan VVA</h3>
         <p>Kontribusi GMV dari cluster VVA Pusat (Jabodetabek) dan VVA Cabang (luar kota).</p>
@@ -368,7 +361,7 @@ function renderOverview() {
     <div class="metric-grid">${payload.cards.map(metricCard).join("")}</div>
     ${vvaHtml}
 
-    <div class="content-grid" style="margin-top:20px;">
+    <div class="content-grid" style="margin-top:14px;">
       <article class="insight-card">
         <div class="card-headline">
           <div>
@@ -410,7 +403,7 @@ function renderOverview() {
       </article>
     </div>
 
-    <div class="table-grid" style="margin-top:20px;">
+    <div class="table-grid" style="margin-top:14px;">
       <article class="table-card">
         <div class="card-headline">
           <div>

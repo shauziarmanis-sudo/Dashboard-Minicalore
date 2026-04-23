@@ -4,6 +4,7 @@ import json
 import mimetypes
 import os
 import random
+import threading
 import uuid
 from calendar import monthrange
 from datetime import date, datetime, time, timedelta, timezone
@@ -17,7 +18,8 @@ from dashboard_store import current_source_mode, load_filter_options, load_sync_
 ROOT_DIR = Path(__file__).resolve().parent
 STATIC_DIR = ROOT_DIR / "static"
 APP_TIMEZONE = timezone(timedelta(hours=7))
-REFERENCE_DATE = date.fromisoformat(os.getenv("DASHBOARD_REFERENCE_DATE", "2026-04-20"))
+_ref_env = os.getenv("DASHBOARD_REFERENCE_DATE")
+REFERENCE_DATE = date.fromisoformat(_ref_env) if _ref_env else date.today()
 
 CHANNELS = ["GoFood", "GrabFood", "ShopeeFood"]
 BRANCHES = [
@@ -90,6 +92,44 @@ CHANNEL_WEIGHTS = {
     "GrabFood": 0.92,
     "ShopeeFood": 0.86,
 }
+
+
+def _scheduler_loop():
+    """Background thread: jalankan sync otomatis setiap hari jam 12:00 WIB."""
+    import time as _time
+    from dashboard_store import current_source_mode, trigger_sync
+
+    def _sample_sync_noop(triggered_by):
+        return {"status": "SKIPPED", "triggered_by": triggered_by}
+
+    while True:
+        now = datetime.now(APP_TIMEZONE)
+        target_today = now.replace(hour=12, minute=0, second=0, microsecond=0)
+        if now >= target_today:
+            target = target_today + timedelta(days=1)
+        else:
+            target = target_today
+
+        wait_seconds = (target - now).total_seconds()
+        print(
+            f"[scheduler] Sync berikutnya dijadwalkan pada {target.isoformat()} "
+            f"(dalam {wait_seconds / 3600:.1f} jam)"
+        )
+        _time.sleep(wait_seconds)
+
+        try:
+            if current_source_mode() == "postgres":
+                result = trigger_sync("CRON", _sample_sync_noop)
+                print(
+                    f"[scheduler] Sync selesai: {result.get('status')} "
+                    f"— {result.get('rows_upserted', 0)} baris di-upsert"
+                )
+            else:
+                print("[scheduler] Mode sample, sync dilewati.")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[scheduler] Sync gagal: {exc}")
+
+        _time.sleep(61)
 
 
 def to_rupiah(value: float | int | None) -> float:
@@ -219,7 +259,7 @@ def build_sync_logs() -> list[dict]:
 
 def totals(records: list[dict]) -> dict:
     gmv = safe_sum(records, "penjualan")
-    diskon = safe_sum(records, "potongan")
+    potongan = safe_sum(records, "potongan")
     harga_coret = safe_sum(records, "harga_coret")
     ads = safe_sum(records, "ads")
     nett_gmv = safe_sum(records, "terima")
@@ -227,14 +267,15 @@ def totals(records: list[dict]) -> dict:
     selisih = safe_sum(records, "selisih")
     return {
         "gmv": gmv,
-        "diskon": diskon,
+        "potongan": potongan,
+        "diskon": harga_coret,
         "harga_coret": harga_coret,
         "ads": ads,
         "nett_gmv": nett_gmv,
         "cash_in": cash_in,
         "selisih": selisih,
         "ads_efficiency": percent(ads, gmv),
-        "discount_rate": percent(diskon, gmv),
+        "discount_rate": percent(harga_coret, gmv),
         "net_margin": percent(nett_gmv, gmv),
         "collection_rate": percent(cash_in, nett_gmv),
     }
@@ -345,7 +386,7 @@ def aggregate_by_key(records: list[dict], key: str) -> list[dict]:
         group["gmv"] += item["penjualan"]
         group["nett_gmv"] += item["terima"]
         group["ads"] += item["ads"]
-        group["diskon"] += item["potongan"]
+        group["diskon"] += item["harga_coret"]
         if item["uang_masuk"] is not None:
             group["cash_in"] += item["uang_masuk"]
         if item["selisih"] is not None:
@@ -595,6 +636,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             "/api/rekonsiliasi": lambda: self.send_json(
                 build_reconciliation_payload(filters, params.get("only_difference", ["false"])[0] == "true")
             ),
+            "/api/sync/cron": lambda: self.send_json(self._handle_cron_sync()),
             "/api/sync/logs": lambda: self.send_json({"logs": load_sync_logs(8, SYNC_LOGS), "source_mode": current_source_mode()}),
         }
         handler = routes.get(parsed.path)
@@ -645,6 +687,15 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
         self.send_json({"message": "Sync manual berhasil dipicu.", "log": latest_log, "source_mode": current_source_mode()})
 
+    def _handle_cron_sync(self) -> dict:
+        def noop(triggered_by):
+            return {"status": "SKIPPED_SAMPLE_MODE", "triggered_by": triggered_by}
+
+        try:
+            return trigger_sync("CRON", noop)
+        except Exception as exc:  # noqa: BLE001
+            return {"error": str(exc)}
+
     def manual_sample_sync(self, triggered_by: str) -> dict:
         now = datetime.now(APP_TIMEZONE)
         sync_id = str(uuid.uuid4())
@@ -676,6 +727,8 @@ class DashboardHandler(SimpleHTTPRequestHandler):
 
 def run() -> None:
     port = int(os.getenv("PORT", "8000"))
+    scheduler_thread = threading.Thread(target=_scheduler_loop, daemon=True)
+    scheduler_thread.start()
     server = ThreadingHTTPServer(("127.0.0.1", port), DashboardHandler)
     print(f"Dashboard server berjalan di http://127.0.0.1:{port}")
     server.serve_forever()

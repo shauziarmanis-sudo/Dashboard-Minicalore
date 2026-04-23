@@ -325,8 +325,8 @@ def query_totals(connection, filters: dict):
     query = f"""
         SELECT
             COALESCE(SUM(penjualan), 0) AS gmv,
-            COALESCE(SUM(potongan), 0) AS diskon,
-            COALESCE(SUM(harga_coret), 0) AS harga_coret,
+            COALESCE(SUM(potongan), 0) AS potongan_platform,
+            COALESCE(SUM(harga_coret), 0) AS diskon_promo,
             COALESCE(SUM(ads), 0) AS ads,
             COALESCE(SUM(terima), 0) AS nett_gmv,
             COALESCE(SUM(uang_masuk), 0) AS cash_in,
@@ -339,7 +339,7 @@ def query_totals(connection, filters: dict):
         row = cursor.fetchone()
 
     gmv = current_or_zero(row[0])
-    diskon = current_or_zero(row[1])
+    potongan = current_or_zero(row[1])
     harga_coret = current_or_zero(row[2])
     ads = current_or_zero(row[3])
     nett_gmv = current_or_zero(row[4])
@@ -348,14 +348,15 @@ def query_totals(connection, filters: dict):
 
     return {
         "gmv": gmv,
-        "diskon": diskon,
+        "potongan": potongan,
+        "diskon": harga_coret,
         "harga_coret": harga_coret,
         "ads": ads,
         "nett_gmv": nett_gmv,
         "cash_in": cash_in,
         "selisih": selisih,
         "ads_efficiency": safe_pct(ads, gmv),
-        "discount_rate": safe_pct(diskon, gmv),
+        "discount_rate": safe_pct(harga_coret, gmv),
         "net_margin": safe_pct(nett_gmv, gmv),
         "collection_rate": safe_pct(cash_in, nett_gmv),
     }
