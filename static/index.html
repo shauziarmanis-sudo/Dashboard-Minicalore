@@ -7,71 +7,67 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700;800&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/styles.css?v=20260423-2" />
+    <link rel="stylesheet" href="/styles.css?v=20260424-2" />
   </head>
   <body>
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-panel brand-panel">
-          <span class="eyebrow">Main Kitchen</span>
-          <h1>Dashboard Sales Overview</h1>
-          <p>Real-time performance across all branches, brands, and delivery platforms.</p>
+        <div class="brand-panel">
+          <span class="eyebrow">Dashboard Minicalore</span>
+          <h1>Sales Overview</h1>
+          <p>Executive analytics for branches, brands, and delivery channels.</p>
         </div>
 
-        <div class="sidebar-panel nav-panel">
+        <div class="nav-panel">
           <div class="sidebar-heading">
-            <span class="eyebrow">Navigation</span>
-            <span class="sidebar-note">Executive workspace</span>
+            <span class="eyebrow">Workspace</span>
+            <span class="sidebar-note">Role-based pages</span>
           </div>
           <nav class="page-nav" id="page-nav"></nav>
-        </div>
-
-        <div class="sidebar-panel session-panel" id="session-panel">
-          <div class="session-head">
-            <span class="eyebrow">Session</span>
-            <span class="role-chip" id="role-chip">Belum login</span>
-          </div>
-          <div class="session-meta">
-            <strong id="session-name">Akses dashboard</strong>
-            <span id="session-copy">Login untuk membuka halaman sesuai role.</span>
-          </div>
-        </div>
-
-        <div class="sidebar-panel sync-panel">
-          <div class="sidebar-heading">
-            <span class="eyebrow">Sync Status</span>
-            <span class="sidebar-note">Sheets to warehouse</span>
-          </div>
-          <div id="sync-summary" class="sync-summary">
-            Menunggu login untuk menampilkan status sinkronisasi terbaru.
-          </div>
         </div>
       </aside>
 
       <div class="main-shell">
         <header class="topbar">
-          <div class="topbar-copy">
-            <span class="topbar-kicker">Culinary Cartographer</span>
-            <strong class="topbar-title">Central Sales Command</strong>
+          <div class="topbar-leading">
+            <div class="topbar-copy">
+              <span class="topbar-kicker">Gemini-Inspired Analytics</span>
+              <strong class="topbar-title">Dashboard Sales Overview</strong>
+            </div>
+            <div class="sync-summary" id="sync-summary">
+              <span class="sync-pill-dot"></span>
+              Menunggu status sinkronisasi
+            </div>
           </div>
+
           <div class="topbar-actions">
-            <button class="icon-button" type="button" aria-label="Notifikasi">
-              <span class="material-symbols-outlined">notifications</span>
-            </button>
-            <button class="icon-button" type="button" aria-label="Bantuan">
-              <span class="material-symbols-outlined">help</span>
-            </button>
-            <button class="secondary-button" id="sync-button" type="button">
+            <button class="secondary-button compact-button" id="sync-button" type="button">
               <span class="material-symbols-outlined">sync</span>
-              Sync manual
+              Sync
             </button>
-            <button class="ghost-button" id="logout-button" type="button">
-              <span class="material-symbols-outlined">logout</span>
-              Logout
-            </button>
+
+            <details class="avatar-dropdown">
+              <summary class="avatar-trigger" aria-label="User menu">
+                <span class="role-chip" id="role-chip">Belum login</span>
+                <span class="avatar-badge">MC</span>
+              </summary>
+
+              <div class="avatar-menu">
+                <div class="session-panel" id="session-panel">
+                  <span class="eyebrow">Current session</span>
+                  <strong id="session-name">Akses dashboard</strong>
+                  <span id="session-copy">Login untuk membuka halaman sesuai role.</span>
+                </div>
+
+                <button class="ghost-button menu-logout" id="logout-button" type="button">
+                  <span class="material-symbols-outlined">logout</span>
+                  Logout
+                </button>
+              </div>
+            </details>
           </div>
         </header>
 
@@ -81,24 +77,26 @@
               <span class="eyebrow">Multi-cabang | Multi-brand | Multi-platform</span>
               <h2 id="page-title">Ringkasan bisnis real-time</h2>
               <p id="page-subtitle">
-                Gunakan filter global untuk melihat performa restoran lintas cabang, brand, dan channel.
+                Gunakan smart filters untuk membaca performa restoran lintas cabang, brand, dan channel dalam satu alur yang lebih ringan.
               </p>
             </div>
+          </section>
 
-            <section class="toolbar-panel">
+          <section class="toolbar-panel">
+            <div class="toolbar-shell">
               <div class="toolbar-head">
                 <div>
-                  <span class="eyebrow">Control Semua Halaman</span>
-                  <h3>Filter global yang lebih ringkas</h3>
+                  <span class="eyebrow">Smart Filter Bar</span>
+                  <h3>Kontrol global untuk seluruh halaman</h3>
                 </div>
                 <div class="toolbar-actions">
-                  <button class="ghost-button" id="reset-filters" type="button">Reset</button>
-                  <button class="primary-button" id="apply-filters" type="button">Terapkan filter</button>
+                  <button class="ghost-button compact-button" id="reset-filters" type="button">Reset</button>
+                  <button class="primary-button compact-button" id="apply-filters" type="button">Refresh</button>
                 </div>
               </div>
 
               <div class="toolbar-grid">
-                <label class="field compact-field">
+                <label class="field chip-field">
                   <span class="field-label">
                     <span class="material-symbols-outlined">calendar_today</span>
                     Mulai
@@ -106,7 +104,7 @@
                   <input type="date" id="start-date" />
                 </label>
 
-                <label class="field compact-field">
+                <label class="field chip-field">
                   <span class="field-label">
                     <span class="material-symbols-outlined">event</span>
                     Selesai
@@ -137,16 +135,16 @@
                   </summary>
                   <div class="dropdown-menu" id="brand-options"></div>
                 </details>
-              </div>
 
-              <div class="channel-defaults">
-                <span class="field-caption">
-                  <span class="material-symbols-outlined">apps</span>
-                  Channel default
-                </span>
-                <div class="static-pill-list" id="channel-options"></div>
+                <div class="channel-defaults">
+                  <span class="field-caption">
+                    <span class="material-symbols-outlined">apps</span>
+                    Channel
+                  </span>
+                  <div class="static-pill-list" id="channel-options"></div>
+                </div>
               </div>
-            </section>
+            </div>
           </section>
 
           <div class="status-banner" id="status-banner">Menunggu autentikasi.</div>
@@ -163,13 +161,16 @@
 
     <div class="login-modal" id="login-modal">
       <div class="login-card">
+        <div class="login-aura aura-one"></div>
+        <div class="login-aura aura-two"></div>
+
         <div class="login-copy">
-          <span class="eyebrow">Demo Access</span>
+          <span class="eyebrow">Role-based access</span>
           <h2>Masuk ke Dashboard Sales Overview</h2>
           <p>
-            Role-based access disiapkan untuk Executive, Finance, Marketing, dan Operations
-            dengan tampilan yang sama seperti dashboard live.
+            Pengalaman baru yang lebih ringan untuk owner, finance, marketing, dan operations dengan fokus pada kecepatan membaca data.
           </p>
+
           <ul class="credential-list">
             <li><strong>owner</strong> / minicalore123</li>
             <li><strong>finance</strong> / minicalore123</li>
@@ -207,6 +208,6 @@
       </div>
     </div>
 
-    <script type="module" src="/js/app.js?v=20260423-2"></script>
+    <script type="module" src="/js/app.js?v=20260424-2"></script>
   </body>
 </html>

@@ -8,8 +8,8 @@ import {
   formatDate,
   formatPercent,
   formatSignedPercent,
-} from "./utils.js?v=20260423-2";
-import { renderDonutChart, renderGroupedBars, renderHorizontalBars, renderTrendChart } from "./charts.js?v=20260423-2";
+} from "./utils.js?v=20260424-2";
+import { renderDonutChart, renderGroupedBars, renderHorizontalBars, renderTrendChart } from "./charts.js?v=20260424-2";
 
 const plainNumberFormatter = new Intl.NumberFormat("id-ID", {
   maximumFractionDigits: 0,
@@ -17,6 +17,10 @@ const plainNumberFormatter = new Intl.NumberFormat("id-ID", {
 const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const motionState = {
   values: new Map(),
+};
+const interactionState = {
+  autoRefreshTimer: null,
+  latestRequestId: 0,
 };
 
 const pageMeta = {
@@ -114,6 +118,10 @@ const el = {
   logoutButton: document.getElementById("logout-button"),
   applyFilters: document.getElementById("apply-filters"),
   resetFilters: document.getElementById("reset-filters"),
+  toolbarShell: document.querySelector(".toolbar-shell"),
+  branchDropdown: document.getElementById("branch-dropdown"),
+  brandDropdown: document.getElementById("brand-dropdown"),
+  avatarDropdown: document.querySelector(".avatar-dropdown"),
 };
 
 function motionAllowed() {
@@ -154,6 +162,10 @@ function reportLoadFailure(context, error) {
 
 function setStatus(message) {
   el.statusBanner.textContent = message;
+}
+
+function setToolbarApplying(isApplying) {
+  el.toolbarShell?.classList.toggle("is-applying", isApplying);
 }
 
 function setButtonBusy(button, isBusy, busyLabel) {
@@ -429,6 +441,9 @@ function getSelectedValues(name) {
 }
 
 function updateFilterCounts() {
+  if (!state.filterOptions) {
+    return;
+  }
   const allBranchesSelected = state.filters.cabang.length === state.filterOptions.cabang.length;
   const allBrandsSelected = state.filters.brand.length === state.filterOptions.brand.length;
   el.branchCount.textContent = allBranchesSelected ? "Semua cabang" : `${state.filters.cabang.length} cabang`;
@@ -445,6 +460,9 @@ function syncFiltersToForm() {
 }
 
 function readFiltersFromForm() {
+  if (!state.filterOptions) {
+    return;
+  }
   const selectedBranches = getSelectedValues("cabang");
   const selectedBrands = getSelectedValues("brand");
   state.filters = {
@@ -455,6 +473,25 @@ function readFiltersFromForm() {
     channel: [...state.filterOptions.channel],
   };
   updateFilterCounts();
+}
+
+function scheduleAutoRefresh() {
+  readFiltersFromForm();
+
+  if (!state.session) {
+    return;
+  }
+  if (!state.filters.start || !state.filters.end) {
+    setStatus("Lengkapi rentang tanggal untuk menerapkan filter.");
+    return;
+  }
+
+  window.clearTimeout(interactionState.autoRefreshTimer);
+  setToolbarApplying(true);
+  setStatus("Menerapkan filter terbaru...");
+  interactionState.autoRefreshTimer = window.setTimeout(() => {
+    refreshData().catch(() => {});
+  }, 180);
 }
 
 function resetFiltersToDefault() {
@@ -1037,7 +1074,7 @@ function renderReconciliationPage() {
   });
 }
 
-function renderSyncSummary() {
+function renderSyncSummaryLegacy() {
   const latest = state.data.syncLogs?.logs?.[0];
   if (!latest) {
     el.syncSummary.textContent = "Belum ada log sinkronisasi.";
@@ -1057,6 +1094,24 @@ function togglePages() {
   Object.entries(pageMeta).forEach(([page, meta]) => {
     document.getElementById(meta.id).classList.toggle("is-hidden", page !== state.activePage);
   });
+}
+
+function renderSyncSummary() {
+  const latest = state.data.syncLogs?.logs?.[0];
+  if (!latest) {
+    el.syncSummary.textContent = "Belum ada log sinkronisasi.";
+    el.syncSummary.removeAttribute("title");
+    return;
+  }
+
+  const sourceMode = state.data.syncLogs?.source_mode || state.data.kpi?.source_mode || "sample";
+  const detail = `Sinkronisasi ${latest.status} pada ${formatDate(latest.started_at)} | ${latest.rows_upserted} baris di-upsert | ${latest.rows_failed} gagal | source ${sourceMode}`;
+  el.syncSummary.title = detail;
+  el.syncSummary.innerHTML = `
+    <div class="sync-badge ${latest.status === "SUCCESS" ? "is-success" : "is-warning"}">${escapeHtml(latest.status)}</div>
+    <strong>${escapeHtml(formatDate(latest.started_at))}</strong>
+    <span class="sync-mode">${escapeHtml(sourceMode)}</span>
+  `;
 }
 
 function renderActivePage() {
@@ -1094,10 +1149,13 @@ async function refreshData() {
     return;
   }
 
+  window.clearTimeout(interactionState.autoRefreshTimer);
   readFiltersFromForm();
+  const requestId = ++interactionState.latestRequestId;
   setStatus("Memuat ulang KPI, tren, performa brand, cabang, platform, dan rekonsiliasi...");
   showLoadingState();
   setButtonBusy(el.applyFilters, true, "Memuat");
+  setToolbarApplying(true);
 
   try {
     const query = buildQuery(state.filters);
@@ -1116,6 +1174,9 @@ async function refreshData() {
     }
 
     const responses = await Promise.all(requests);
+    if (requestId !== interactionState.latestRequestId) {
+      return;
+    }
     let cursor = 0;
     state.data.kpi = responses[cursor++];
     state.data.syncLogs = responses[cursor++];
@@ -1139,11 +1200,17 @@ async function refreshData() {
     renderActivePage();
     setStatus(`Dashboard siap. Data terfilter dari ${formatDate(state.filters.start)} sampai ${formatDate(state.filters.end)}.`);
   } catch (error) {
+    if (requestId !== interactionState.latestRequestId) {
+      return;
+    }
     reportLoadFailure("refreshData", error);
     throw error;
   } finally {
-    clearLoadingState();
-    setButtonBusy(el.applyFilters, false);
+    if (requestId === interactionState.latestRequestId) {
+      clearLoadingState();
+      setButtonBusy(el.applyFilters, false);
+      setToolbarApplying(false);
+    }
   }
 }
 
@@ -1192,6 +1259,7 @@ async function handleManualSync() {
 
 function handleLogout() {
   clearSession();
+  el.avatarDropdown?.removeAttribute("open");
   el.loginModal.classList.remove("is-hidden");
   state.data = {};
   state.onlyDifference = false;
@@ -1220,14 +1288,19 @@ function bindEvents() {
     resetFiltersToDefault();
     await refreshData();
   });
+  el.startDate.addEventListener("change", scheduleAutoRefresh);
+  el.endDate.addEventListener("change", scheduleAutoRefresh);
+  el.branchOptions.addEventListener("change", scheduleAutoRefresh);
+  el.brandOptions.addEventListener("change", scheduleAutoRefresh);
   document.addEventListener("click", (event) => {
-    const branchDropdown = document.getElementById("branch-dropdown");
-    const brandDropdown = document.getElementById("brand-dropdown");
-    if (branchDropdown && !branchDropdown.contains(event.target)) {
-      branchDropdown.removeAttribute("open");
+    if (el.branchDropdown && !el.branchDropdown.contains(event.target)) {
+      el.branchDropdown.removeAttribute("open");
     }
-    if (brandDropdown && !brandDropdown.contains(event.target)) {
-      brandDropdown.removeAttribute("open");
+    if (el.brandDropdown && !el.brandDropdown.contains(event.target)) {
+      el.brandDropdown.removeAttribute("open");
+    }
+    if (el.avatarDropdown && !el.avatarDropdown.contains(event.target)) {
+      el.avatarDropdown.removeAttribute("open");
     }
   });
 }
