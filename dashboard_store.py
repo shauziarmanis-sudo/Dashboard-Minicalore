@@ -236,6 +236,7 @@ def query_kpi_summary(filters: dict):
                 "end": filters["end"],
             }
             month_totals = query_totals(connection, month_filters)
+            actual_days = query_actual_days(connection, month_filters)
 
             top_branch = query_top_group(connection, filters, "cabang", "cabang")
             top_brand = query_top_group(connection, filters, "brand", "brand")
@@ -251,12 +252,12 @@ def query_kpi_summary(filters: dict):
             previous_vva_pusat_gmv = query_vva_gmv(connection, previous_filters, VVA_PUSAT_BRANCHES)
             current_vva_cabang_gmv = query_vva_gmv(connection, filters, VVA_CABANG_BRANCHES)
             previous_vva_cabang_gmv = query_vva_gmv(connection, previous_filters, VVA_CABANG_BRANCHES)
+            anomalies = query_anomalies(connection, filters)
     except Exception:  # noqa: BLE001
         return None
 
     month_days = monthrange(filters["end"].year, filters["end"].month)[1]
-    days_elapsed = filters["end"].day
-    run_rate = round((current_or_zero(month_totals["gmv"]) / days_elapsed) * month_days, 2) if days_elapsed else 0.0
+    run_rate = round((current_or_zero(month_totals["gmv"]) / actual_days) * month_days, 2) if actual_days else 0.0
 
     cards = [
         {"key": "gmv", "label": "GMV", "value": current_or_zero(current_totals["gmv"]), "delta": change_pct(current_totals["gmv"], previous_totals["gmv"]), "accent": "forest"},
@@ -280,6 +281,8 @@ def query_kpi_summary(filters: dict):
             "discount_rate": current_totals["discount_rate"],
             "net_margin": current_totals["net_margin"],
             "collection_rate": current_totals["collection_rate"],
+            "roas": safe_ratio(current_totals["gmv"], current_totals["ads"]),
+            "ads_pct_gmv": current_totals["ads_efficiency"] or 0,
         },
         "cards": cards,
         "highlights": {
@@ -300,6 +303,7 @@ def query_kpi_summary(filters: dict):
                 "delta": change_pct(current_vva_cabang_gmv, previous_vva_cabang_gmv),
             },
         },
+        "anomalies": anomalies,
         "source_mode": "postgres",
     }
 
@@ -414,6 +418,75 @@ def query_vva_gmv(connection, filters: dict, branch_list: list[str]) -> float:
     return current_or_zero(row[0]) if row else 0.0
 
 
+def query_actual_days(connection, filters: dict) -> int:
+    where_sql, params = sql_where(filters)
+    query = f"""
+        SELECT COUNT(DISTINCT tanggal)
+        FROM transaksi_harian
+        WHERE {where_sql}
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(query, params)
+        row = cursor.fetchone()
+    return int(row[0] or 0) if row else 0
+
+
+def query_anomalies(connection, filters: dict):
+    where_sql, params = sql_where(filters)
+    high_gap_query = f"""
+        SELECT
+            cabang,
+            COALESCE(SUM(uang_masuk), 0) AS cash_in,
+            COALESCE(SUM(selisih), 0) AS selisih
+        FROM transaksi_harian
+        WHERE {where_sql}
+        GROUP BY cabang
+        HAVING COALESCE(SUM(uang_masuk), 0) <> 0
+           AND ABS(COALESCE(SUM(selisih), 0)) > ABS(COALESCE(SUM(uang_masuk), 0)) * 0.1
+        ORDER BY ABS(COALESCE(SUM(selisih), 0)) DESC
+        LIMIT 8
+    """
+    overspend_query = f"""
+        SELECT
+            brand,
+            COALESCE(SUM(penjualan), 0) AS gmv,
+            COALESCE(SUM(ads), 0) AS ads
+        FROM transaksi_harian
+        WHERE {where_sql}
+        GROUP BY brand
+        HAVING COALESCE(SUM(penjualan), 0) <> 0
+           AND (COALESCE(SUM(ads), 0) / COALESCE(SUM(penjualan), 0)) > 0.2
+        ORDER BY (COALESCE(SUM(ads), 0) / COALESCE(SUM(penjualan), 0)) DESC
+        LIMIT 8
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(high_gap_query, params)
+        high_gap_rows = cursor.fetchall()
+        cursor.execute(overspend_query, params)
+        overspend_rows = cursor.fetchall()
+
+    return {
+        "high_gap_branches": [
+            {
+                "cabang": row[0],
+                "cash_in": current_or_zero(row[1]),
+                "selisih": current_or_zero(row[2]),
+                "gap_pct": safe_pct(abs(current_or_zero(row[2])), abs(current_or_zero(row[1]))),
+            }
+            for row in high_gap_rows
+        ],
+        "overspend_brands": [
+            {
+                "brand": row[0],
+                "gmv": current_or_zero(row[1]),
+                "ads": current_or_zero(row[2]),
+                "ads_pct_gmv": safe_pct(row[2], row[1]) or 0,
+            }
+            for row in overspend_rows
+        ],
+    }
+
+
 def sql_where(filters: dict):
     clauses = ["tanggal BETWEEN %s AND %s"]
     params = [filters["start"], filters["end"]]
@@ -439,6 +512,14 @@ def safe_pct(numerator, denominator):
     if denominator == 0:
         return None
     return round((numerator / denominator) * 100, 2)
+
+
+def safe_ratio(numerator, denominator):
+    numerator = current_or_zero(numerator)
+    denominator = current_or_zero(denominator)
+    if denominator == 0:
+        return 0.0
+    return round(numerator / denominator, 2)
 
 
 def change_pct(current, previous):

@@ -8,8 +8,15 @@ import {
   formatDate,
   formatPercent,
   formatSignedPercent,
-} from "./utils.js?v=20260424-3";
-import { renderDonutChart, renderGroupedBars, renderHorizontalBars, renderTrendChart } from "./charts.js?v=20260424-2";
+} from "./utils.js?v=20260428-1";
+import {
+  renderDonutChart,
+  renderGroupedBars,
+  renderHeatmapBar,
+  renderHorizontalBars,
+  renderTrendChart,
+  renderWeeklyBars,
+} from "./charts.js?v=20260428-1";
 
 const plainNumberFormatter = new Intl.NumberFormat("id-ID", {
   maximumFractionDigits: 0,
@@ -39,6 +46,14 @@ const pageMeta = {
     label: "Tren Harian",
     icon: "monitoring",
     hint: "Gerak harian penjualan",
+  },
+  deepdive: {
+    id: "deepdive-page",
+    title: "Deep Dive GMV & Ads",
+    subtitle: "Analisis mendalam GMV dan Ads Spend per outlet, per brand, dan breakdown mingguan.",
+    label: "Deep Dive",
+    icon: "manage_search",
+    hint: "Gali lebih dalam GMV & Ads",
   },
   brand: {
     id: "brand-page",
@@ -87,6 +102,14 @@ const state = {
   activePage: "overview",
   onlyDifference: false,
   data: {},
+  kpiDetailRows: [],
+  kpiDetailSort: { key: "value", direction: "desc" },
+  deepDiveTab: "outlet",
+  deepDiveSort: {
+    outlet: { key: "gmv", direction: "desc" },
+    brand: { key: "gmv", direction: "desc" },
+    week: { key: "week_start", direction: "asc" },
+  },
 };
 
 const el = {
@@ -110,6 +133,7 @@ const el = {
   brandCount: document.getElementById("brand-count"),
   overviewPage: document.getElementById("overview-page"),
   trendPage: document.getElementById("trend-page"),
+  deepdivePage: document.getElementById("deepdive-page"),
   brandPage: document.getElementById("brand-page"),
   branchPage: document.getElementById("branch-page"),
   platformPage: document.getElementById("platform-page"),
@@ -122,6 +146,11 @@ const el = {
   branchDropdown: document.getElementById("branch-dropdown"),
   brandDropdown: document.getElementById("brand-dropdown"),
   avatarDropdown: document.querySelector(".avatar-dropdown"),
+  toolbarPanel: document.querySelector(".toolbar-panel"),
+  kpiDetailModal: document.getElementById("kpi-detail-modal"),
+  kpiDetailTitle: document.getElementById("kpi-detail-title"),
+  kpiDetailBody: document.getElementById("kpi-detail-body"),
+  kpiDetailClose: document.getElementById("kpi-detail-close"),
 };
 
 function motionAllowed() {
@@ -532,6 +561,8 @@ const metricMeta = {
 
 function metricCard(card) {
   const meta = metricMeta[card.key] || { icon: "analytics", note: "Ringkasan metrik utama", className: "is-compact", chip: "Metric" };
+  const canDrill = ["gmv", "nett_gmv", "ads", "diskon", "cash_in", "selisih"].includes(card.key);
+  const targetHtml = card.key === "run_rate" ? targetEditorHtml(card.value) : "";
   return `
     <article class="kpi-card ${escapeHtml(meta.className)} accent-${escapeHtml(card.accent)}">
       <div class="kpi-card-orb"></div>
@@ -545,8 +576,59 @@ function metricCard(card) {
       ${animatedValue("div", "metric-value", card.value, "currency", `card:${card.key}`)}
       <div class="card-subtitle">${escapeHtml(meta.note)}</div>
       <div class="metric-delta ${deltaClass(card.delta)}">${formatSignedPercent(card.delta)}</div>
+      ${targetHtml}
+      ${
+        canDrill
+          ? `<button class="detail-link" type="button" data-kpi-detail="${escapeHtml(card.key)}">Lihat Detail <span aria-hidden="true">-></span></button>`
+          : ""
+      }
     </article>
   `;
+}
+
+function activeMonthKey() {
+  const end = state.filters.end || new Date().toISOString().slice(0, 10);
+  return end.slice(0, 7);
+}
+
+function targetStorageKey() {
+  return `gmv-target-${activeMonthKey()}`;
+}
+
+function getGmvTarget() {
+  return Number(localStorage.getItem(targetStorageKey()) || 0);
+}
+
+function setGmvTarget(value) {
+  const numericValue = Math.max(0, Number(value || 0));
+  if (numericValue) {
+    localStorage.setItem(targetStorageKey(), String(numericValue));
+    return;
+  }
+  localStorage.removeItem(targetStorageKey());
+}
+
+function targetEditorHtml(runRate) {
+  const target = getGmvTarget();
+  const progress = target ? Math.min((Number(runRate || 0) / target) * 100, 999) : 0;
+  const statusClass = progress >= 100 ? "is-good" : progress >= 70 ? "is-mid" : "is-low";
+  const gap = Math.max(target - Number(runRate || 0), 0);
+  return `
+    <div class="target-widget ${statusClass}">
+      <label>
+        <span>Target bulan ini</span>
+        <input id="gmv-target-input" type="number" min="0" step="1000000" value="${target || ""}" placeholder="Isi target GMV" />
+      </label>
+      <div class="target-track"><div style="width:${Math.min(progress, 100)}%;"></div></div>
+      <small>${target ? `${formatPercent(progress)} tercapai | Sisa ${formatCurrency(gap)}` : "Target belum diisi"}</small>
+    </div>
+  `;
+}
+
+function efficiencyClass(roasValue) {
+  if (roasValue >= 3) return "is-good";
+  if (roasValue >= 1) return "is-mid";
+  return "is-low";
 }
 
 function vvaCard(label, data, icon) {
@@ -578,12 +660,17 @@ function vvaCard(label, data, icon) {
 function renderOverview() {
   const payload = state.data.kpi;
   const logs = state.data.syncLogs?.logs || [];
+  const heatmap = state.data.heatmap?.rows || [];
   if (!payload) {
     el.overviewPage.innerHTML = emptyState("Belum ada data overview", "Silakan login dan terapkan filter.");
     return;
   }
 
   const highlights = payload.highlights;
+  const roasValue = Number(payload.derived?.roas || 0);
+  const adsPctValue = Number(payload.derived?.ads_pct_gmv || 0);
+  const anomalies = payload.anomalies || { high_gap_branches: [], overspend_brands: [] };
+  const anomalyCount = (anomalies.high_gap_branches?.length || 0) + (anomalies.overspend_brands?.length || 0);
   const vvaHtml = payload.vva ? `
     <div class="section-heading" style="margin-top:14px;">
       <div>
@@ -608,7 +695,28 @@ function renderOverview() {
     </div>
 
     <div class="metric-grid">${payload.cards.map(metricCard).join("")}</div>
+    <div class="efficiency-strip ${efficiencyClass(roasValue)}">
+      <div>
+        <span class="eyebrow">Ads efficiency</span>
+        <strong>ROAS ${escapeHtml(String(roasValue.toFixed(2)))}</strong>
+      </div>
+      <div class="efficiency-meter">
+        <div style="width:${Math.min((roasValue / 5) * 100, 100)}%;"></div>
+      </div>
+      <span>Ads/GMV ratio ${formatPercent(adsPctValue)}</span>
+    </div>
     ${vvaHtml}
+
+    <div class="chart-card" style="margin-top:14px;">
+      <div class="card-headline">
+        <div>
+          <h3>Distribusi GMV per Hari</h3>
+          <p>Heatmap sederhana untuk melihat hari dengan kontribusi GMV tertinggi.</p>
+        </div>
+        <span class="badge subtle">Day of week</span>
+      </div>
+      <div id="dow-heatmap"></div>
+    </div>
 
     <div class="content-grid" style="margin-top:14px;">
       <article class="insight-card">
@@ -710,7 +818,166 @@ function renderOverview() {
         </ul>
       </article>
     </div>
+
+    <details class="attention-panel" style="margin-top:14px;" ${anomalyCount ? "open" : ""}>
+      <summary>
+        <span class="material-symbols-outlined">warning</span>
+        Perlu Perhatian
+        <strong>${escapeHtml(String(anomalyCount))}</strong>
+      </summary>
+      <div class="attention-grid">
+        ${
+          anomalyCount
+            ? [
+                ...(anomalies.high_gap_branches || []).map(
+                  (row) => `
+                    <article class="warning-card">
+                      <span class="material-symbols-outlined">account_balance</span>
+                      <div>
+                        <strong>${escapeHtml(row.cabang)}</strong>
+                        <p>Selisih ${formatCurrency(row.selisih)} atau ${formatPercent(row.gap_pct)} dari cash in.</p>
+                      </div>
+                    </article>
+                  `
+                ),
+                ...(anomalies.overspend_brands || []).map(
+                  (row) => `
+                    <article class="warning-card">
+                      <span class="material-symbols-outlined">campaign</span>
+                      <div>
+                        <strong>${escapeHtml(row.brand)}</strong>
+                        <p>Ads/GMV ${formatPercent(row.ads_pct_gmv)} dengan Ads ${formatCurrency(row.ads)}.</p>
+                      </div>
+                    </article>
+                  `
+                ),
+              ].join("")
+            : `<p class="muted">Belum ada anomali besar pada filter aktif.</p>`
+        }
+      </div>
+    </details>
   `;
+
+  renderHeatmapBar(document.getElementById("dow-heatmap"), heatmap);
+  document.getElementById("gmv-target-input")?.addEventListener("change", (event) => {
+    setGmvTarget(event.target.value);
+    renderOverview();
+  });
+}
+
+const kpiDetailLabels = {
+  gmv: "GMV",
+  nett_gmv: "Nett GMV",
+  ads: "Ads Spend",
+  diskon: "Total Diskon",
+  cash_in: "Cash In",
+  selisih: "Selisih",
+};
+
+function closeKpiDetail() {
+  el.kpiDetailModal.style.display = "none";
+  state.kpiDetailRows = [];
+}
+
+function sortRows(rows, key, direction) {
+  const totalRows = rows.filter((row) => row.is_total);
+  const sorted = rows.filter((row) => !row.is_total);
+  sorted.sort((a, b) => {
+    const left = a[key] ?? "";
+    const right = b[key] ?? "";
+    if (typeof left === "number" && typeof right === "number") {
+      return direction === "asc" ? left - right : right - left;
+    }
+    return direction === "asc"
+      ? String(left).localeCompare(String(right))
+      : String(right).localeCompare(String(left));
+  });
+  return [...sorted, ...totalRows];
+}
+
+function renderKpiDetailTable(metricKey) {
+  const rows = sortRows(state.kpiDetailRows, state.kpiDetailSort.key, state.kpiDetailSort.direction);
+  el.kpiDetailBody.innerHTML = `
+    <div class="modal-toolbar">
+      <span class="badge">Periode ${escapeHtml(formatDate(state.filters.start))} - ${escapeHtml(formatDate(state.filters.end))}</span>
+      <button class="secondary-button compact-button" id="kpi-detail-download" type="button">
+        <span class="material-symbols-outlined">download</span>
+        Download CSV
+      </button>
+    </div>
+    <div class="table-wrap detail-table-wrap">
+      <table class="detail-table">
+        <thead>
+          <tr>
+            ${[
+              ["index", "No"],
+              ["cabang", "Cabang"],
+              ["brand", "Brand"],
+              ["channel", "Channel"],
+              ["value", "Nilai"],
+              ["contribution_pct", "% Kontribusi"],
+            ]
+              .map(([key, label]) => `<th><button type="button" data-detail-sort="${key}">${label}</button></th>`)
+              .join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${rows
+            .map(
+              (row, index) => `
+                <tr class="${row.is_total ? "is-total-row" : ""}">
+                  <td>${index + 1}</td>
+                  <td>${escapeHtml(row.cabang)}</td>
+                  <td>${escapeHtml(row.brand)}</td>
+                  <td>${escapeHtml(row.channel)}</td>
+                  <td>${formatCurrency(row.value)}</td>
+                  <td>${formatPercent(row.contribution_pct)}</td>
+                </tr>
+              `
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  el.kpiDetailBody.querySelectorAll("[data-detail-sort]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.detailSort;
+      const direction = state.kpiDetailSort.key === key && state.kpiDetailSort.direction === "desc" ? "asc" : "desc";
+      state.kpiDetailSort = { key, direction };
+      renderKpiDetailTable(metricKey);
+    });
+  });
+  document.getElementById("kpi-detail-download").addEventListener("click", () => {
+    downloadCsv(
+      `kpi-detail-${metricKey}.csv`,
+      rows.map((row, index) => ({
+        no: index + 1,
+        cabang: row.cabang,
+        brand: row.brand,
+        channel: row.channel,
+        nilai: row.value,
+        contribution_pct: row.contribution_pct,
+      }))
+    );
+  });
+}
+
+async function openKpiDetail(metricKey) {
+  el.kpiDetailTitle.textContent = `Detail ${kpiDetailLabels[metricKey] || metricKey}`;
+  el.kpiDetailBody.innerHTML = `<div class="modal-loading"><span class="spinner-dot"></span>Memuat detail KPI...</div>`;
+  el.kpiDetailModal.style.display = "flex";
+  state.kpiDetailSort = { key: "value", direction: "desc" };
+
+  try {
+    const payload = await apiFetch(`/api/kpi/detail?${buildQuery(state.filters, { metric: metricKey })}`);
+    state.kpiDetailRows = payload.rows || [];
+    renderKpiDetailTable(metricKey);
+  } catch (error) {
+    reportLoadFailure("openKpiDetail", error);
+    el.kpiDetailBody.innerHTML = emptyState("Detail KPI gagal dimuat", describeError(error));
+  }
 }
 
 function renderTrendPage() {
@@ -975,6 +1242,196 @@ function renderPlatformPage() {
   renderGroupedBars(document.getElementById("platform-chart"), payload.rows);
 }
 
+function roasClass(value) {
+  if (Number(value) > 3) return "roas-good";
+  if (Number(value) >= 1) return "roas-mid";
+  return "roas-low";
+}
+
+function withBrandContribution(rows) {
+  const total = rows.reduce((sum, row) => sum + Number(row.gmv || 0), 0);
+  return rows.map((row) => ({ ...row, contribution: total ? (Number(row.gmv || 0) / total) * 100 : 0 }));
+}
+
+function deepDiveTable(rows, groupKey, groupLabel, sortScope) {
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>No</th>
+            <th><button type="button" data-deep-sort="${sortScope}:${groupKey}">${escapeHtml(groupLabel)}</button></th>
+            <th><button type="button" data-deep-sort="${sortScope}:gmv">GMV</button></th>
+            <th><button type="button" data-deep-sort="${sortScope}:ads">Ads Spend</button></th>
+            <th><button type="button" data-deep-sort="${sortScope}:nett_gmv">Nett GMV</button></th>
+            <th><button type="button" data-deep-sort="${sortScope}:roas">ROAS</button></th>
+            <th><button type="button" data-deep-sort="${sortScope}:ads_pct_gmv">% Ads/GMV</button></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows
+            .map(
+              (row, index) => `
+                <tr>
+                  <td>${index + 1}</td>
+                  <td>${escapeHtml(row[groupKey])}</td>
+                  <td>${formatCurrency(row.gmv)}</td>
+                  <td>${formatCurrency(row.ads)}</td>
+                  <td>${formatCurrency(row.nett_gmv)}</td>
+                  <td class="${roasClass(row.roas)}">${escapeHtml(String(row.roas.toFixed ? row.roas.toFixed(2) : row.roas))}</td>
+                  <td>${formatPercent(row.ads_pct_gmv)}</td>
+                </tr>
+              `
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function weeklyTable(rows) {
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th><button type="button" data-deep-sort="week:week_start">Minggu</button></th>
+            <th><button type="button" data-deep-sort="week:gmv">GMV</button></th>
+            <th>Delta GMV</th>
+            <th><button type="button" data-deep-sort="week:ads">Ads</button></th>
+            <th><button type="button" data-deep-sort="week:nett_gmv">Nett GMV</button></th>
+            <th><button type="button" data-deep-sort="week:roas">ROAS</button></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows
+            .map((row, index) => {
+              const previous = rows[index - 1]?.gmv || 0;
+              const delta = previous ? ((row.gmv - previous) / previous) * 100 : null;
+              return `
+                <tr>
+                  <td>${escapeHtml(row.week_label)}</td>
+                  <td>${formatCurrency(row.gmv)}</td>
+                  <td class="${deltaClass(delta)}">${delta === null ? "N/A" : formatPercent(delta)}</td>
+                  <td>${formatCurrency(row.ads)}</td>
+                  <td>${formatCurrency(row.nett_gmv)}</td>
+                  <td class="${roasClass(row.roas)}">${escapeHtml(String(row.roas.toFixed ? row.roas.toFixed(2) : row.roas))}</td>
+                </tr>
+              `;
+            })
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderDeepDive() {
+  const payload = state.data.deepdive;
+  if (!payload) {
+    el.deepdivePage.innerHTML = emptyState("Belum ada data deep dive", "Terapkan filter untuk memuat analisis GMV dan Ads.");
+    return;
+  }
+  const active = state.deepDiveTab;
+  const outletRows = sortRows(payload.by_outlet || [], state.deepDiveSort.outlet.key, state.deepDiveSort.outlet.direction);
+  const brandSourceRows = sortRows(payload.by_brand || [], state.deepDiveSort.brand.key, state.deepDiveSort.brand.direction);
+  const brandRows = withBrandContribution(brandSourceRows);
+  const weekRows = sortRows(payload.by_week || [], state.deepDiveSort.week.key, state.deepDiveSort.week.direction);
+
+  el.deepdivePage.innerHTML = `
+    <div class="tab-bar">
+      ${[
+        ["outlet", "Per Outlet"],
+        ["brand", "Per Brand"],
+        ["week", "Per Minggu"],
+      ]
+        .map(([key, label]) => `<button class="${active === key ? "is-active" : ""}" type="button" data-deep-tab="${key}">${label}</button>`)
+        .join("")}
+    </div>
+
+    <section class="deep-tab ${active === "outlet" ? "" : "is-hidden"}" data-deep-section="outlet">
+      <article class="chart-card">
+        <div class="card-headline">
+          <div>
+            <h3>Top 10 outlet by GMV</h3>
+            <p>Ranking outlet dengan kontribusi penjualan tertinggi.</p>
+          </div>
+          <button class="secondary-button compact-button" data-deep-download="outlet" type="button">Download CSV</button>
+        </div>
+        <div id="deep-outlet-bars"></div>
+      </article>
+      <article class="table-card" style="margin-top:14px;">
+        ${deepDiveTable(outletRows, "cabang", "Cabang", "outlet")}
+      </article>
+    </section>
+
+    <section class="deep-tab ${active === "brand" ? "" : "is-hidden"}" data-deep-section="brand">
+      <div class="content-grid">
+        <article class="chart-card">
+          <h3>Top brand by GMV</h3>
+          <div id="deep-brand-bars" style="margin-top:14px;"></div>
+        </article>
+        <article class="chart-card">
+          <h3>GMV share per brand</h3>
+          <div id="deep-brand-donut" style="margin-top:14px;"></div>
+        </article>
+      </div>
+      <article class="table-card" style="margin-top:14px;">
+        <div class="card-headline">
+          <h3>Tabel brand</h3>
+          <button class="secondary-button compact-button" data-deep-download="brand" type="button">Download CSV</button>
+        </div>
+        ${deepDiveTable(brandSourceRows, "brand", "Brand", "brand")}
+      </article>
+    </section>
+
+    <section class="deep-tab ${active === "week" ? "" : "is-hidden"}" data-deep-section="week">
+      <article class="chart-card">
+        <h3>GMV dan Ads per minggu</h3>
+        <div id="deep-week-bars" style="margin-top:14px;"></div>
+      </article>
+      <article class="table-card" style="margin-top:14px;">
+        <div class="card-headline">
+          <h3>Tabel mingguan</h3>
+          <button class="secondary-button compact-button" data-deep-download="week" type="button">Download CSV</button>
+        </div>
+        ${weeklyTable(weekRows)}
+      </article>
+    </section>
+  `;
+
+  renderHorizontalBars(document.getElementById("deep-outlet-bars"), outletRows.slice(0, 10), "gmv", "cabang");
+  renderHorizontalBars(document.getElementById("deep-brand-bars"), brandRows.slice(0, 10), "gmv", "brand");
+  renderDonutChart(document.getElementById("deep-brand-donut"), brandRows, "brand");
+  renderWeeklyBars(document.getElementById("deep-week-bars"), weekRows);
+
+  el.deepdivePage.querySelectorAll("[data-deep-tab]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.deepDiveTab = button.dataset.deepTab;
+      renderDeepDive();
+    });
+  });
+  el.deepdivePage.querySelectorAll("[data-deep-download]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const type = button.dataset.deepDownload;
+      const rows = type === "outlet" ? payload.by_outlet : type === "brand" ? payload.by_brand : payload.by_week;
+      downloadCsv(`deepdive-${type}.csv`, rows || []);
+    });
+  });
+  el.deepdivePage.querySelectorAll("[data-deep-sort]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const [scope, key] = button.dataset.deepSort.split(":");
+      const current = state.deepDiveSort[scope];
+      state.deepDiveSort[scope] = {
+        key,
+        direction: current.key === key && current.direction === "desc" ? "asc" : "desc",
+      };
+      renderDeepDive();
+    });
+  });
+}
+
 function reconciliationExportRows() {
   const rows = state.data.reconciliation?.rows || [];
   return rows.map((row) => ({
@@ -1136,6 +1593,9 @@ function renderActivePage() {
   if (allowedPages().includes("trend") && state.data.trend) {
     renderTrendPage();
   }
+  if (allowedPages().includes("deepdive") && state.data.deepdive) {
+    renderDeepDive();
+  }
   if (allowedPages().includes("brand") && state.data.brand) {
     renderBrandPage();
   }
@@ -1161,16 +1621,17 @@ async function refreshData() {
   window.clearTimeout(interactionState.autoRefreshTimer);
   readFiltersFromForm();
   const requestId = ++interactionState.latestRequestId;
-  setStatus("Memuat ulang KPI, tren, performa brand, cabang, platform, dan rekonsiliasi...");
+  setStatus("Memuat ulang KPI, tren, deep dive, performa brand, cabang, platform, dan rekonsiliasi...");
   showLoadingState();
   setButtonBusy(el.applyFilters, true, "Memuat");
   setToolbarApplying(true);
 
   try {
     const query = buildQuery(state.filters);
-    const requests = [apiFetch(`/api/kpi?${query}`), apiFetch("/api/sync/logs")];
+    const requests = [apiFetch(`/api/kpi?${query}`), apiFetch("/api/sync/logs"), apiFetch(`/api/heatmap?${query}`)];
     const pageLoaders = {
       trend: () => apiFetch(`/api/trend/daily?${query}`),
+      deepdive: () => apiFetch(`/api/deepdive?${query}`),
       brand: () => apiFetch(`/api/brand?${query}`),
       branch: () => apiFetch(`/api/cabang?${query}`),
       platform: () => apiFetch(`/api/platform?${query}`),
@@ -1189,9 +1650,13 @@ async function refreshData() {
     let cursor = 0;
     state.data.kpi = responses[cursor++];
     state.data.syncLogs = responses[cursor++];
+    state.data.heatmap = responses[cursor++];
 
     if (state.activePage === "trend") {
       state.data.trend = responses[cursor++];
+    }
+    if (state.activePage === "deepdive") {
+      state.data.deepdive = responses[cursor++];
     }
     if (state.activePage === "brand") {
       state.data.brand = responses[cursor++];
@@ -1290,6 +1755,12 @@ function bindEvents() {
     state.activePage = button.dataset.page;
     await refreshData();
   });
+  document.addEventListener("click", (event) => {
+    const detailButton = event.target.closest("[data-kpi-detail]");
+    if (detailButton) {
+      openKpiDetail(detailButton.dataset.kpiDetail);
+    }
+  });
   el.syncButton.addEventListener("click", handleManualSync);
   el.logoutButton.addEventListener("click", handleLogout);
   el.applyFilters.addEventListener("click", refreshData);
@@ -1302,6 +1773,17 @@ function bindEvents() {
   el.branchOptions.addEventListener("change", scheduleAutoRefresh);
   el.brandOptions.addEventListener("change", scheduleAutoRefresh);
   el.channelOptions.addEventListener("change", scheduleAutoRefresh);
+  el.kpiDetailClose.addEventListener("click", closeKpiDetail);
+  el.kpiDetailModal.addEventListener("click", (event) => {
+    if (event.target === el.kpiDetailModal) {
+      closeKpiDetail();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && el.kpiDetailModal.style.display !== "none") {
+      closeKpiDetail();
+    }
+  });
   document.addEventListener("click", (event) => {
     if (el.branchDropdown && !el.branchDropdown.contains(event.target)) {
       el.branchDropdown.removeAttribute("open");
@@ -1313,6 +1795,19 @@ function bindEvents() {
       el.avatarDropdown.removeAttribute("open");
     }
   });
+
+  if ("IntersectionObserver" in window && el.toolbarPanel) {
+    const sentinel = document.createElement("div");
+    sentinel.className = "toolbar-sentinel";
+    el.toolbarPanel.before(sentinel);
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        el.toolbarPanel.classList.toggle("is-stuck", !entry.isIntersecting);
+      },
+      { rootMargin: `-${getComputedStyle(document.documentElement).getPropertyValue("--topbar-height").trim()} 0px 0px 0px` }
+    );
+    observer.observe(sentinel);
+  }
 }
 
 async function init() {

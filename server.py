@@ -54,7 +54,7 @@ USERS = {
         "name": "Nadya Owner",
         "password": "minicalore123",
         "role": "executive",
-        "pages": ["overview", "trend", "brand", "branch", "platform", "reconciliation"],
+        "pages": ["overview", "trend", "deepdive", "brand", "branch", "platform", "reconciliation"],
     },
     "finance": {
         "name": "Dimas Finance",
@@ -66,13 +66,13 @@ USERS = {
         "name": "Rani Marketing",
         "password": "minicalore123",
         "role": "marketing",
-        "pages": ["overview", "trend", "brand", "platform"],
+        "pages": ["overview", "trend", "deepdive", "brand", "platform"],
     },
     "ops": {
         "name": "Bagas Operations",
         "password": "minicalore123",
         "role": "operations",
-        "pages": ["overview", "trend", "branch"],
+        "pages": ["overview", "trend", "deepdive", "branch"],
     },
 }
 BRANCH_WEIGHTS = {
@@ -400,6 +400,109 @@ def aggregate_by_key(records: list[dict], key: str) -> list[dict]:
     return result
 
 
+def roas(gmv: float, ads: float) -> float:
+    return round(gmv / ads, 2) if ads else 0.0
+
+
+def ads_pct_gmv(ads: float, gmv: float) -> float:
+    return round((ads / gmv) * 100, 2) if gmv else 0.0
+
+
+def metric_value(item: dict, metric: str) -> float:
+    metric_map = {
+        "gmv": "penjualan",
+        "nett_gmv": "terima",
+        "ads": "ads",
+        "diskon": "harga_coret",
+        "cash_in": "uang_masuk",
+        "selisih": "selisih",
+    }
+    raw_value = item.get(metric_map[metric])
+    return float(raw_value or 0)
+
+
+def build_kpi_detail_payload(filters: dict, metric: str) -> dict:
+    allowed = {"gmv", "nett_gmv", "ads", "diskon", "cash_in", "selisih"}
+    if metric not in allowed:
+        return {"error": "Metric tidak valid.", "rows": [], "totals": {}}
+
+    records = load_transactions(filters, sample_records)
+    bucket: dict[tuple[str, str, str], dict] = {}
+    for item in records:
+        key = (item["cabang"], item["brand"], item["channel"])
+        group = bucket.setdefault(
+            key,
+            {
+                "cabang": item["cabang"],
+                "brand": item["brand"],
+                "channel": item["channel"],
+                "value": 0.0,
+                "gmv": 0.0,
+            },
+        )
+        group["value"] += metric_value(item, metric)
+        group["gmv"] += item["penjualan"]
+
+    total_value = sum(row["value"] for row in bucket.values())
+    total_gmv = sum(row["gmv"] for row in bucket.values())
+    rows = []
+    for row in bucket.values():
+        rows.append(
+            {
+                **row,
+                "value": to_rupiah(row["value"]),
+                "gmv": to_rupiah(row["gmv"]),
+                "contribution_pct": percent(row["value"], total_value),
+            }
+        )
+    rows.sort(key=lambda row: row["value"], reverse=True)
+
+    totals_row = {
+        "cabang": "TOTAL",
+        "brand": "",
+        "channel": "",
+        "value": to_rupiah(total_value),
+        "gmv": to_rupiah(total_gmv),
+        "contribution_pct": 100 if total_value else None,
+        "is_total": True,
+    }
+
+    return {
+        "metric": metric,
+        "period": {"start": filters["start"].isoformat(), "end": filters["end"].isoformat()},
+        "rows": [*rows, totals_row],
+        "totals": totals_row,
+        "source_mode": current_source_mode(),
+    }
+
+
+def compute_anomalies(branch_rows: list[dict], brand_rows: list[dict]) -> dict:
+    high_gap_branches = [
+        {
+            "cabang": row["cabang"],
+            "selisih": row["selisih"],
+            "cash_in": row["cash_in"],
+            "gap_pct": percent(abs(row["selisih"]), row["cash_in"]),
+        }
+        for row in branch_rows
+        if row["cash_in"] and abs(row["selisih"]) > row["cash_in"] * 0.1
+    ]
+    overspend_brands = [
+        {
+            "brand": row["brand"],
+            "ads": row["ads"],
+            "gmv": row["gmv"],
+            "ads_pct_gmv": ads_pct_gmv(row["ads"], row["gmv"]),
+        }
+        for row in brand_rows
+        if ads_pct_gmv(row["ads"], row["gmv"]) > 20
+    ]
+    return {
+        "high_gap_branches": high_gap_branches[:8],
+        "overspend_brands": overspend_brands[:8],
+    }
+
+
 def month_to_date_records(filters: dict) -> list[dict]:
     target_end = filters["end"]
     month_start = target_end.replace(day=1)
@@ -424,8 +527,8 @@ def build_kpi_payload(filters: dict) -> dict:
     month_records = month_to_date_records(filters)
     month_totals = totals(month_records)
     month_days = monthrange(filters["end"].year, filters["end"].month)[1]
-    days_elapsed = filters["end"].day
-    run_rate = to_rupiah((month_totals["gmv"] / days_elapsed) * month_days) if days_elapsed else 0
+    actual_days = len(set(record["tanggal"] for record in month_records)) if month_records else 0
+    run_rate = to_rupiah((month_totals["gmv"] / actual_days) * month_days) if actual_days else 0
 
     branch_rows = aggregate_by_key(current_records, "cabang")
     brand_rows = aggregate_by_key(current_records, "brand")
@@ -456,6 +559,8 @@ def build_kpi_payload(filters: dict) -> dict:
             "discount_rate": current_totals["discount_rate"],
             "net_margin": current_totals["net_margin"],
             "collection_rate": current_totals["collection_rate"],
+            "roas": roas(current_totals["gmv"], current_totals["ads"]),
+            "ads_pct_gmv": ads_pct_gmv(current_totals["ads"], current_totals["gmv"]),
         },
         "cards": cards,
         "highlights": {
@@ -468,6 +573,7 @@ def build_kpi_payload(filters: dict) -> dict:
             "pusat": vva_pusat,
             "cabang": vva_cabang,
         },
+        "anomalies": compute_anomalies(branch_rows, brand_rows),
         "source_mode": current_source_mode(),
     }
 
@@ -503,6 +609,90 @@ def build_trend_payload(filters: dict) -> dict:
             "nett_gmv": to_rupiah(sum(day["nett_gmv"] for day in points) / len(points)) if points else 0,
             "ads": to_rupiah(sum(day["ads"] for day in points) / len(points)) if points else 0,
         },
+    }
+
+
+def build_deepdive_payload(filters: dict) -> dict:
+    current_records = load_transactions(filters, sample_records)
+
+    def grouped(key: str, output_key: str) -> list[dict]:
+        bucket: dict[str, dict] = {}
+        for item in current_records:
+            group_value = item[key]
+            group = bucket.setdefault(group_value, {output_key: group_value, "gmv": 0.0, "ads": 0.0, "nett_gmv": 0.0})
+            group["gmv"] += item["penjualan"]
+            group["ads"] += item["ads"]
+            group["nett_gmv"] += item["terima"]
+
+        rows = []
+        for group in bucket.values():
+            rows.append(
+                {
+                    **group,
+                    "gmv": to_rupiah(group["gmv"]),
+                    "ads": to_rupiah(group["ads"]),
+                    "nett_gmv": to_rupiah(group["nett_gmv"]),
+                    "roas": roas(group["gmv"], group["ads"]),
+                    "ads_pct_gmv": round(ads_pct_gmv(group["ads"], group["gmv"]), 1),
+                }
+            )
+        rows.sort(key=lambda row: row["gmv"], reverse=True)
+        return rows
+
+    week_bucket: dict[str, dict] = {}
+    for item in current_records:
+        parsed_date = date.fromisoformat(item["tanggal"])
+        week_start = parsed_date - timedelta(days=parsed_date.weekday())
+        month_start = week_start.replace(day=1)
+        week_index = ((week_start - month_start).days // 7) + 1
+        label = f"W{week_index} {week_start.strftime('%b')}"
+        group = week_bucket.setdefault(
+            week_start.isoformat(),
+            {"week_label": label, "week_start": week_start.isoformat(), "gmv": 0.0, "ads": 0.0, "nett_gmv": 0.0},
+        )
+        group["gmv"] += item["penjualan"]
+        group["ads"] += item["ads"]
+        group["nett_gmv"] += item["terima"]
+
+    by_week = []
+    for group in sorted(week_bucket.values(), key=lambda row: row["week_start"]):
+        by_week.append(
+            {
+                **group,
+                "gmv": to_rupiah(group["gmv"]),
+                "ads": to_rupiah(group["ads"]),
+                "nett_gmv": to_rupiah(group["nett_gmv"]),
+                "roas": roas(group["gmv"], group["ads"]),
+            }
+        )
+
+    return {
+        "by_outlet": grouped("cabang", "cabang"),
+        "by_brand": grouped("brand", "brand"),
+        "by_week": by_week,
+        "source_mode": current_source_mode(),
+    }
+
+
+def build_heatmap_payload(filters: dict) -> dict:
+    current_records = load_transactions(filters, sample_records)
+    day_names = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
+    rows = {name: {"day_of_week": name, "gmv": 0.0, "order_count": 0} for name in day_names}
+    for item in current_records:
+        parsed_date = date.fromisoformat(item["tanggal"])
+        row = rows[day_names[parsed_date.weekday()]]
+        row["gmv"] += item["penjualan"]
+        row["order_count"] += 1
+    return {
+        "rows": [
+            {
+                "day_of_week": row["day_of_week"],
+                "gmv": to_rupiah(row["gmv"]),
+                "order_count": row["order_count"],
+            }
+            for row in rows.values()
+        ],
+        "source_mode": current_source_mode(),
     }
 
 
@@ -629,7 +819,10 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         routes = {
             "/api/filters": self.handle_filters,
             "/api/kpi": lambda: self.send_json(build_kpi_payload(filters)),
+            "/api/kpi/detail": lambda: self.send_json(build_kpi_detail_payload(filters, params.get("metric", ["gmv"])[0])),
             "/api/trend/daily": lambda: self.send_json(build_trend_payload(filters)),
+            "/api/deepdive": lambda: self.send_json(build_deepdive_payload(filters)),
+            "/api/heatmap": lambda: self.send_json(build_heatmap_payload(filters)),
             "/api/brand": lambda: self.send_json(build_brand_payload(filters)),
             "/api/cabang": lambda: self.send_json(build_branch_payload(filters)),
             "/api/platform": lambda: self.send_json(build_platform_payload(filters)),

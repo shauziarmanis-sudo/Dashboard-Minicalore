@@ -1,4 +1,4 @@
-import { emptyState, escapeHtml, formatCompact, formatCurrency, formatDate } from "./utils.js?v=20260423-2";
+import { emptyState, escapeHtml, formatCompact, formatCurrency, formatDate } from "./utils.js?v=20260428-1";
 
 function scale(value, max, size) {
   if (!max) {
@@ -154,26 +154,36 @@ export function renderDonutChart(container, rows, labelKey) {
     .join("");
 
   container.innerHTML = `
-    <div class="summary-inline">
-      <div class="chart-frame" style="max-width:280px;">
-        <svg viewBox="0 0 220 220" role="img" aria-label="Kontribusi brand">
+    <div style="display:flex; flex-wrap:wrap; gap:24px; align-items:center;">
+      <div style="flex:0 0 220px; min-width:180px;">
+        <svg viewBox="0 0 220 220" style="width:100%;height:auto;" role="img" aria-label="Kontribusi brand terhadap total GMV">
           <circle cx="110" cy="110" r="${radius}" fill="none" stroke="rgba(32,24,16,0.08)" stroke-width="26" />
           ${arcs}
           <text x="110" y="102" text-anchor="middle" fill="#6e5d4b" font-size="13">Total GMV</text>
           <text x="110" y="126" text-anchor="middle" fill="#201810" font-size="16" font-weight="700">${escapeHtml(formatCompact(total))}</text>
         </svg>
       </div>
-      <div class="stack" style="width:100%;">
-        ${rows
-          .map(
-            (row, index) => `
-              <div class="summary-inline">
-                <span><i style="display:inline-block;width:12px;height:12px;border-radius:999px;background:${colors[index % colors.length]};margin-right:8px;"></i>${escapeHtml(row[labelKey])}</span>
-                <strong>${row.contribution.toFixed(1)}%</strong>
-              </div>
-            `
-          )
-          .join("")}
+      <div style="flex:1; min-width:200px;">
+        <table style="width:100%; border-collapse:collapse; font-size:0.875rem;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:6px 8px;">Brand</th>
+              <th style="text-align:right; padding:6px 8px;">GMV</th>
+              <th style="text-align:right; padding:6px 8px;">Share</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row, index) => `
+              <tr>
+                <td style="padding:6px 8px;">
+                  <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${colors[index % colors.length]};margin-right:8px;"></span>${escapeHtml(row[labelKey])}
+                </td>
+                <td style="text-align:right; padding:6px 8px;">${formatCurrency(row.gmv)}</td>
+                <td style="text-align:right; padding:6px 8px;">${row.contribution.toFixed(1)}%</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
       </div>
     </div>
   `;
@@ -233,6 +243,79 @@ export function renderGroupedBars(container, rows) {
     <div class="legend">
       ${series
         .map((serie) => `<span><i style="background:${serie.color}"></i>${serie.label}</span>`)
+        .join("")}
+    </div>
+  `;
+}
+
+export function renderWeeklyBars(container, rows) {
+  if (!rows?.length) {
+    container.innerHTML = emptyState("Tidak ada data mingguan", "Pilih filter lain untuk melihat breakdown mingguan.");
+    return;
+  }
+
+  const width = 780;
+  const height = 320;
+  const left = 54;
+  const right = 22;
+  const top = 22;
+  const bottom = 54;
+  const innerWidth = width - left - right;
+  const innerHeight = height - top - bottom;
+  const groupWidth = innerWidth / rows.length;
+  const maxValue = Math.max(...rows.flatMap((row) => [row.gmv, row.ads]), 1);
+  const bars = rows
+    .map((row, rowIndex) => {
+      const barWidth = Math.max(12, groupWidth / 5);
+      const gmvHeight = scale(row.gmv, maxValue, innerHeight);
+      const adsHeight = scale(row.ads, maxValue, innerHeight);
+      const baseX = left + rowIndex * groupWidth + groupWidth / 2;
+      return `
+        <rect x="${baseX - barWidth - 3}" y="${top + innerHeight - gmvHeight}" width="${barWidth}" height="${gmvHeight}" rx="8" fill="#1a9b67" />
+        <rect x="${baseX + 3}" y="${top + innerHeight - adsHeight}" width="${barWidth}" height="${adsHeight}" rx="8" fill="#d18b00" />
+        <text x="${baseX}" y="${height - 18}" text-anchor="middle" fill="#747775" font-size="12">${escapeHtml(row.week_label)}</text>
+      `;
+    })
+    .join("");
+
+  container.innerHTML = `
+    <div class="chart-frame">
+      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="GMV dan Ads per minggu">
+        <line x1="${left}" x2="${width - right}" y1="${top + innerHeight}" y2="${top + innerHeight}" stroke="rgba(31,31,31,0.14)" />
+        ${bars}
+      </svg>
+    </div>
+    <div class="legend">
+      <span><i style="background:#1a9b67"></i>GMV</span>
+      <span><i style="background:#d18b00"></i>Ads</span>
+    </div>
+  `;
+}
+
+export function renderHeatmapBar(container, rows) {
+  if (!rows?.length) {
+    container.innerHTML = emptyState("Belum ada distribusi harian", "Ubah filter untuk melihat GMV per hari.");
+    return;
+  }
+
+  const maxValue = Math.max(...rows.map((row) => row.gmv), 1);
+  container.innerHTML = `
+    <div class="heatmap-bars">
+      ${rows
+        .map((row) => {
+          const intensity = Math.max(0.14, row.gmv / maxValue);
+          const width = scale(row.gmv, maxValue, 100);
+          return `
+            <div class="heatmap-row">
+              <span>${escapeHtml(row.day_of_week)}</span>
+              <div class="heatmap-track">
+                <div class="heatmap-fill" style="width:${width}%; background:rgba(26,155,103,${intensity});"></div>
+              </div>
+              <strong>${formatCurrency(row.gmv)}</strong>
+              <small>${escapeHtml(String(row.order_count))} trx</small>
+            </div>
+          `;
+        })
         .join("")}
     </div>
   `;
