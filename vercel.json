@@ -3,8 +3,7 @@
     { "path": "/api/sync/cron", "schedule": "0 5 * * *" }
   ],
   "rewrites": [
-    { "source": "/api/kpi/detail", "destination": "/api/kpi_detail" },
-    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/api/(.*)", "destination": "/api/index" },
     { "source": "/styles.css", "destination": "/static/styles.css" },
     { "source": "/js/(.*)", "destination": "/static/js/$1" },
     { "source": "/", "destination": "/static/index.html" },
