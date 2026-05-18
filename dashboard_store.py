@@ -549,6 +549,9 @@ def sync_google_sheet_to_postgres(triggered_by: str):
     upserted = 0
     failed = 0
     last_error = ""
+    transformed_rows = []
+    skipped_old = 0
+    sync_cutoff = None
 
     with closing(connect_database(module)) as connection:
         ensure_schema(connection)
@@ -560,44 +563,49 @@ def sync_google_sheet_to_postgres(triggered_by: str):
                 """,
                 (sync_id, started_at, "RUNNING", rows_read, 0, 0, "", triggered_by),
             )
-
-            transformed_rows = []
-            for row in raw_rows:
-                try:
-                    transformed_rows.append(transform_sheet_row(row, batch_id))
-                except Exception as exc:  # noqa: BLE001
-                    failed += 1
-                    last_error = str(exc)
-
-            for batch in chunked(transformed_rows, 500):
-                try:
-                    cursor.executemany(UPSERT_SQL, batch)
-                    upserted += len(batch)
-                except Exception as exc:  # noqa: BLE001
-                    last_error = str(exc)
-                    for item in batch:
-                        try:
-                            cursor.execute(UPSERT_SQL, item)
-                            upserted += 1
-                        except Exception as row_exc:  # noqa: BLE001
-                            failed += 1
-                            last_error = str(row_exc)
-
-            status = "SUCCESS" if failed == 0 else "PARTIAL"
-            finished_at = datetime.utcnow()
-            cursor.execute(
-                """
-                UPDATE sync_log
-                SET finished_at = %s,
-                    status = %s,
-                    rows_upserted = %s,
-                    rows_failed = %s,
-                    error_message = %s
-                WHERE sync_id = %s
-                """,
-                (finished_at, status, upserted, failed, last_error, sync_id),
-            )
         connection.commit()
+
+    with closing(connect_database(module)) as connection:
+        sync_cutoff = incremental_sync_cutoff(connection, triggered_by)
+
+    for row in raw_rows:
+        try:
+            transformed = transform_sheet_row(row, batch_id)
+            if sync_cutoff and transformed["tanggal"] < sync_cutoff:
+                skipped_old += 1
+                continue
+            transformed_rows.append(transformed)
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            last_error = str(exc)
+
+    batch_size = int(os.getenv("SYNC_BATCH_SIZE", "1000"))
+    for batch in chunked(transformed_rows, batch_size):
+        try:
+            with closing(connect_database(module)) as connection:
+                with connection.cursor() as cursor:
+                    cursor.executemany(UPSERT_SQL, batch)
+                connection.commit()
+            upserted += len(batch)
+        except Exception as exc:  # noqa: BLE001
+            last_error = str(exc)
+            for item in batch:
+                try:
+                    with closing(connect_database(module)) as connection:
+                        with connection.cursor() as cursor:
+                            cursor.execute(UPSERT_SQL, item)
+                        connection.commit()
+                    upserted += 1
+                except Exception as row_exc:  # noqa: BLE001
+                    failed += 1
+                    last_error = str(row_exc)
+        update_sync_log(module, sync_id, "RUNNING", upserted, failed, last_error)
+
+    status = "SUCCESS" if failed == 0 else "PARTIAL"
+    if sync_cutoff and not last_error:
+        last_error = f"Incremental sync sejak {sync_cutoff.isoformat()}; {skipped_old} baris lama dilewati."
+    finished_at = datetime.utcnow()
+    update_sync_log(module, sync_id, status, upserted, failed, last_error, finished_at)
 
     return {
         "sync_id": sync_id,
@@ -610,6 +618,39 @@ def sync_google_sheet_to_postgres(triggered_by: str):
         "error_message": last_error,
         "triggered_by": triggered_by,
     }
+
+
+def incremental_sync_cutoff(connection, triggered_by: str):
+    if os.getenv("FORCE_FULL_SYNC", "").lower() in ("1", "true", "yes"):
+        return None
+    if "FULL" in str(triggered_by or "").upper():
+        return None
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT MAX(tanggal) FROM transaksi_harian")
+        row = cursor.fetchone()
+    latest = row[0] if row else None
+    if latest is None:
+        return None
+    lookback_days = int(os.getenv("SYNC_LOOKBACK_DAYS", "7"))
+    return latest - timedelta(days=lookback_days)
+
+
+def update_sync_log(module, sync_id: str, status: str, upserted: int, failed: int, error_message: str, finished_at=None):
+    with closing(connect_database(module)) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE sync_log
+                SET finished_at = %s,
+                    status = %s,
+                    rows_upserted = %s,
+                    rows_failed = %s,
+                    error_message = %s
+                WHERE sync_id = %s
+                """,
+                (finished_at, status, upserted, failed, error_message, sync_id),
+            )
+        connection.commit()
 
 
 def chunked(items, size: int):
@@ -771,8 +812,17 @@ def fetch_sheet_rows():
 def fetch_sheet_rows_from_csv(csv_url: str):
     with urllib.request.urlopen(csv_url) as response:
         payload = response.read().decode("utf-8-sig")
-    reader = csv.DictReader(io.StringIO(payload))
-    return [dict(row) for row in reader]
+    raw_rows = list(csv.reader(io.StringIO(payload)))
+    if not raw_rows:
+        return []
+    headers = unique_sheet_headers(raw_rows[0])
+    rows = []
+    for raw in raw_rows[1:]:
+        row = {}
+        for index, header in enumerate(headers):
+            row[header] = raw[index] if index < len(raw) else ""
+        rows.append(row)
+    return rows
 
 
 def fetch_sheet_rows_from_api(spreadsheet_id: str, worksheet_name: str):
@@ -798,7 +848,7 @@ def fetch_sheet_rows_from_api(spreadsheet_id: str, worksheet_name: str):
     values = response.get("values", [])
     if not values:
         return []
-    headers = values[0]
+    headers = unique_sheet_headers(values[0])
     rows = []
     for raw in values[1:]:
         row = {}
@@ -806,6 +856,17 @@ def fetch_sheet_rows_from_api(spreadsheet_id: str, worksheet_name: str):
             row[header] = raw[index] if index < len(raw) else ""
         rows.append(row)
     return rows
+
+
+def unique_sheet_headers(headers: list[str]):
+    seen: dict[str, int] = {}
+    unique_headers = []
+    for index, raw_header in enumerate(headers):
+        header = str(raw_header or "").strip() or f"__column_{index + 1}"
+        count = seen.get(header, 0)
+        seen[header] = count + 1
+        unique_headers.append(header if count == 0 else f"{header}__{count + 1}")
+    return unique_headers
 
 
 def load_service_account_info():
@@ -887,6 +948,8 @@ def map_raw_row(raw_row: dict):
     flat = {}
     for key, value in raw_row.items():
         normalized_key = normalize_header(key)
+        if not normalized_key:
+            continue
         flat[normalized_key] = value
 
     mapped = {}
@@ -896,6 +959,11 @@ def map_raw_row(raw_row: dict):
             if alias_key in flat:
                 mapped[target] = flat[alias_key]
                 break
+
+    if not mapped.get("tanggal"):
+        inferred_date = infer_date_value(raw_row)
+        if inferred_date:
+            mapped["tanggal"] = inferred_date
 
     if mapped.get("nama_akun") and (
         not mapped.get("cabang") or not mapped.get("channel") or not mapped.get("brand")
@@ -909,6 +977,18 @@ def map_raw_row(raw_row: dict):
     if missing:
         raise ValueError(f"Kolom wajib kosong atau tidak ditemukan: {', '.join(missing)}")
     return mapped
+
+
+def infer_date_value(raw_row: dict):
+    for value in raw_row.values():
+        if not str(value or "").strip():
+            continue
+        try:
+            parse_date(value)
+            return value
+        except ValueError:
+            continue
+    return ""
 
 
 def normalize_header(value: str):
